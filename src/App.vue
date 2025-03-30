@@ -37,12 +37,12 @@ watch([shipCount, equipCount], ([ships, equips]) => {
 </script>
 
 <template>
-  <header>
+  <!-- <header>
     <nav>
       <router-link to="/">首页</router-link>
       <router-link to="/development">装备开发</router-link>
     </nav>
-  </header>
+  </header> -->
   
   <main>
     <DataInitializer />

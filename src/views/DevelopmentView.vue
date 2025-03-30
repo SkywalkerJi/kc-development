@@ -139,7 +139,7 @@
         <!-- 可用公式区域 -->
         <div class="development-results">
           <h3>可用公式</h3>
-          <table>
+          <table v-if="hasSelectedEquipments">
             <thead>
               <tr>
                 <th>秘书舰</th>
@@ -218,6 +218,10 @@ const isCurrentFlagshipSelected = computed(() =>
 
 // 当前可出货装备的分类
 const currentPoolEquipments = ref<{ [id: number]: number }>({})
+// 判断是否有选中的装备
+const hasSelectedEquipments = computed(() => {
+  return developmentStore.getSelectedEquipIds().length > 0
+})
 const targetEquipments = computed(() => {
   const equipIds = Object.keys(developmentStore.filterButtonList)
     .map(Number)
@@ -503,9 +507,9 @@ function getResourceRequirement(equip: Api_EquipInfo): string {
 function calculateDevelopmentResults() {
   const targetEquipIds = developmentStore.getSelectedEquipIds()
   
-  // 如果没有选中装备，只使用当前配置计算
+  // 如果没有选中装备，清空结果并返回
   if (targetEquipIds.length === 0) {
-    developmentResults.value = developmentStore.calculateDevelopmentResults(resources.value)
+    developmentResults.value = []
     return
   }
   
