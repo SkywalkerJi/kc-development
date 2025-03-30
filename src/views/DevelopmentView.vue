@@ -123,16 +123,28 @@
         <div class="equipment-filter">
           <h3>自选装备组合</h3>
           <div class="equipment-buttons">
-            <button 
-              v-for="(state, equipId) in developmentStore.filterButtonList" 
-              :key="equipId"
-              :class="{ 'selected': state.select, 'disabled': !isEquipmentAvailable(Number(equipId)) }"
-              :disabled="!isEquipmentAvailable(Number(equipId)) && !state.select"
-              @click="toggleEquipment(Number(equipId))"
-            >
-              <img v-if="getEquipIcon(state.equipInfo)" :src="getEquipIcon(state.equipInfo)" alt="装备图标" />
-              {{ state.equipInfo.name }}
-            </button>
+            <!-- 按装备类型分组显示 -->
+            <template v-for="(group, groupIndex) in equipmentGroups" :key="groupIndex">
+              <div class="equipment-group">
+                <button 
+                  v-for="equipId in group" 
+                  :key="equipId"
+                  :class="{ 
+                    'selected': developmentStore.filterButtonList[equipId].select, 
+                    'disabled': !isEquipmentAvailable(Number(equipId)) 
+                  }"
+                  :disabled="!isEquipmentAvailable(Number(equipId)) && !developmentStore.filterButtonList[equipId].select"
+                  @click="toggleEquipment(Number(equipId))"
+                >
+                  <img 
+                    v-if="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)" 
+                    :src="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)" 
+                    alt="装备图标" 
+                  />
+                  {{ developmentStore.filterButtonList[equipId].equipInfo.name }}
+                </button>
+              </div>
+            </template>
           </div>
         </div>
         
@@ -285,6 +297,54 @@ const replacedEquipments = computed(() => {
     .filter(equip => equip !== undefined)
 })
 
+// 装备分组
+const equipmentGroups = computed(() => {
+  // 检查filterButtonList是否已初始化
+  if (Object.keys(developmentStore.filterButtonList).length === 0) {
+    return []
+  }
+  
+  // 按类型分组
+  const groups: Record<number, number[]> = {}
+  
+  // 获取所有装备ID并排序
+  const allEquipIds = Object.keys(developmentStore.filterButtonList).map(Number)
+  
+  // 按照原C#程序的排序方式进行排序
+  allEquipIds.sort((a, b) => {
+    const equipA = start2Store.equipList[a]
+    const equipB = start2Store.equipList[b]
+    
+    if (!equipA || !equipB) return 0
+    
+    if (equipA.types[2] !== equipB.types[2]) {
+      return equipA.types[2] - equipB.types[2]
+    }
+    
+    if (equipA.types[3] !== equipB.types[3]) {
+      return equipA.types[3] - equipB.types[3]
+    }
+    
+    return a - b
+  })
+  
+  // 按照types[2]分组
+  for (const equipId of allEquipIds) {
+    const equip = start2Store.equipList[equipId]
+    if (!equip) continue
+    
+    const typeId = equip.types[2]
+    if (!groups[typeId]) {
+      groups[typeId] = []
+    }
+    
+    groups[typeId].push(equipId)
+  }
+  
+  // 转换为数组
+  return Object.values(groups)
+})
+
 // 初始化数据
 onMounted(async () => {
   // 初始化开发数据
@@ -421,12 +481,107 @@ function normalizeResource(index: number) {
 // 切换装备选择状态
 function toggleEquipment(equipId: number) {
   developmentStore.toggleEquipmentSelect(equipId)
+  // 修改：更新可用装备列表后再计算公式
+  updatePossibleEquipments()
   calculateDevelopmentResults()
   
   // 如果有可用公式，自动应用第一个
   if (developmentResults.value.length > 0) {
     selectResult(developmentResults.value[0])
   }
+}
+
+// 新增：获取可能的装备列表
+function updatePossibleEquipments() {
+  const selectedEquipIds = developmentStore.getSelectedEquipIds()
+  
+  // 如果没有选中的装备，所有装备都可用
+  if (selectedEquipIds.length === 0) {
+    for (const key in developmentStore.filterButtonList) {
+      developmentStore.filterButtonList[key].select = false
+    }
+    return
+  }
+  
+  // 九六式陸攻特殊处理标记
+  const has九六式陸攻 = selectedEquipIds.includes(168)
+  
+  // 收集可能的装备ID
+  const possibleEquips: number[] = []
+  
+  // 遍历所有池查找可包含所有目标装备的池
+  for (const poolname of developmentStore.existPool) {
+    for (let poolType = 1; poolType <= 3; poolType++) {
+      // 找到基础池
+      const basePool = developmentStore.developmentPools.find(p => 
+        p.开发池名称 === poolname && p.开发池ID === poolType
+      )
+      
+      if (basePool) {
+        // 找到兼容池
+        const compatiblePools = developmentStore.developmentPools.filter(p => 
+          Math.abs(p.开发池ID) === poolType && 
+          p.舰ID && basePool.舰ID &&
+          basePool.舰ID.every(id => p.舰ID?.includes(id))
+        )
+        
+        // 合并所有兼容池的出货率
+        const allDropRates: Record<string, number> = {}
+        
+        for (const pool of compatiblePools) {
+          if (!pool.出货率) continue
+          
+          if (has九六式陸攻 || pool.开发池ID > 0) {
+            // 处理正面池或有九六式陸攻的情况
+            for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
+              if (allDropRates[equipIdStr] !== undefined) {
+                allDropRates[equipIdStr] += rate
+              } else {
+                allDropRates[equipIdStr] = rate
+              }
+            }
+          } else {
+            // 处理负面池
+            for (const equipIdStr of Object.keys(pool.出货率)) {
+              if (allDropRates[equipIdStr] === undefined) {
+                allDropRates[equipIdStr] = 0
+              }
+            }
+          }
+        }
+        
+        // 检查此池是否有所有目标装备出货
+        const availableEquips = Object.keys(allDropRates)
+          .filter(idStr => allDropRates[idStr] > 0)
+          .map(Number)
+        
+        // 如果此池包含所有目标装备
+        if (selectedEquipIds.every(id => availableEquips.includes(id))) {
+          // 将所有装备加入可能列表
+          for (const equipIdStr of Object.keys(allDropRates)) {
+            const equipId = Number(equipIdStr)
+            if (!possibleEquips.includes(equipId)) {
+              possibleEquips.push(equipId)
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // 更新按钮状态
+  for (const key in developmentStore.filterButtonList) {
+    const equipId = Number(key)
+    // 已选装备保持选中状态，未选装备根据是否在可能列表中决定是否启用
+    if (!selectedEquipIds.includes(equipId)) {
+      if (possibleEquips.includes(equipId)) {
+        // 在可能列表中的装备可选
+        developmentStore.filterButtonList[key].select = false
+      }
+    }
+  }
+  
+  return possibleEquips
 }
 
 // 计算装备组总出货率
@@ -735,16 +890,75 @@ function selectResult(result: DevelopResult) {
 
 // 检查装备是否可用
 function isEquipmentAvailable(equipId: number): boolean {
-  // 如果没有选中的装备，所有装备都可用
+  // 如果是已选装备，始终可用
+  if (developmentStore.filterButtonList[equipId]?.select) {
+    return true
+  }
+  
   const selectedEquips = developmentStore.getSelectedEquipIds()
-  if (selectedEquips.length === 0) return true
   
-  // 如果已经选中，则可用
-  if (developmentStore.filterButtonList[equipId]?.select) return true
+  // 如果没有选择任何装备，所有装备都可用
+  if (selectedEquips.length === 0) {
+    return true
+  }
   
-  // 检查是否在可能的装备列表中
-  const possibleEquips = developmentStore.updateAvailableEquipments(selectedEquips) || []
-  return possibleEquips.includes(equipId)
+  // 查找与当前选中装备组合兼容的装备
+  const has九六式陸攻 = selectedEquips.includes(168)
+  const possibleEquips: number[] = []
+  
+  // 遍历所有池查找可以包含所有目标装备的池
+  for (const poolname of developmentStore.existPool) {
+    for (let poolType = 1; poolType <= 3; poolType++) {
+      // 找到基础池
+      const basePool = developmentStore.developmentPools.find(p => 
+        p.开发池名称 === poolname && p.开发池ID === poolType
+      )
+      
+      if (basePool) {
+        // 找到兼容池
+        const compatiblePools = developmentStore.developmentPools.filter(p => 
+          Math.abs(p.开发池ID) === poolType && 
+          p.舰ID && basePool.舰ID &&
+          basePool.舰ID.every(id => p.舰ID?.includes(id))
+        )
+        
+        // 合并所有兼容池的出货率
+        const allDropRates: Record<string, number> = {}
+        
+        for (const pool of compatiblePools) {
+          if (!pool.出货率) continue
+          
+          if (has九六式陸攻 || pool.开发池ID > 0) {
+            for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
+              if (allDropRates[equipIdStr] !== undefined) {
+                allDropRates[equipIdStr] += rate
+              } else {
+                allDropRates[equipIdStr] = rate
+              }
+            }
+          } else {
+            for (const equipIdStr of Object.keys(pool.出货率)) {
+              if (allDropRates[equipIdStr] === undefined) {
+                allDropRates[equipIdStr] = 0
+              }
+            }
+          }
+        }
+        
+        // 检查此池是否有所有已选装备的出货
+        const availableEquips = Object.keys(allDropRates)
+          .filter(idStr => allDropRates[idStr] > 0)
+          .map(Number)
+        
+        if (selectedEquips.every(id => availableEquips.includes(id)) && 
+            availableEquips.includes(equipId)) {
+          return true
+        }
+      }
+    }
+  }
+  
+  return false
 }
 
 // 获取装备图标
@@ -862,12 +1076,24 @@ const equipRatesDetailMap = ref<Record<number, number[]>>({})
 
 .equipment-buttons {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  flex-direction: column;
+  gap: 10px;
   max-height: 300px;
   overflow-y: auto;
   border: 1px solid #ddd;
   padding: 10px;
+}
+
+.equipment-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #ddd;
+}
+
+.equipment-group:last-child {
+  border-bottom: none;
 }
 
 .equipment-buttons button {

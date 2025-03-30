@@ -106,31 +106,34 @@ export const useDevelopmentStore = defineStore('development', () => {
       }
     }
     
-    // 排序装备ID
-    const sortedEquipIds = Array.from(equipSet).sort((a, b) => {
-      const equipA = start2Store.equipList[a]
-      const equipB = start2Store.equipList[b]
-      
-      if (!equipA || !equipB) return 0
-      
-      if (equipA.types[2] !== equipB.types[2]) {
-        return equipA.types[2] - equipB.types[2]
+    // 符合条件的装备列表
+    const equipList: any[] = []
+    
+    // 将装备ID转换为装备对象，用于排序
+    for (const equipId of equipSet) {
+      if (start2Store.equipList[equipId]) {
+        equipList.push(start2Store.equipList[equipId])
+      }
+    }
+    
+    // 按照C#中的逻辑对装备排序
+    equipList.sort((a, b) => {
+      if (a.types[2] !== b.types[2]) {
+        return a.types[2] - b.types[2]
       }
       
-      if (equipA.types[3] !== equipB.types[3]) {
-        return equipA.types[3] - equipB.types[3]
+      if (a.types[3] !== b.types[3]) {
+        return a.types[3] - b.types[3]
       }
       
-      return a - b
+      return a.id - b.id
     })
     
     // 创建按钮状态
-    for (const equipId of sortedEquipIds) {
-      if (start2Store.equipList[equipId]) {
-        filterButtonList.value[equipId] = {
-          equipInfo: start2Store.equipList[equipId],
-          select: false
-        }
+    for (const equip of equipList) {
+      filterButtonList.value[equip.id] = {
+        equipInfo: equip,
+        select: false
       }
     }
     
@@ -410,37 +413,72 @@ export const useDevelopmentStore = defineStore('development', () => {
       for (const key in filterButtonList.value) {
         filterButtonList.value[key].select = false
       }
-      return
+      return Object.keys(filterButtonList.value).map(Number);
     }
+    
+    // 九六式陸攻特殊处理标记
+    const has九六式陸攻 = targetEquipIds.includes(168)
     
     // 收集可能的装备ID
     const possibleEquips: number[] = []
     
     // 查找包含所有目标装备的池
     for (const poolname of existPool.value) {
-      for (let i = 1; i <= 3; i++) {
-        for (const pool of developmentPools.value) {
-          if (pool.开发池名称 === poolname && Math.abs(pool.开发池ID) === i && pool.出货率) {
-            const equipIds = Object.keys(pool.出货率).map(Number)
-            if (targetEquipIds.every(id => equipIds.includes(id))) {
-              // 将此池的所有装备加入可能列表
-              for (const id of equipIds) {
-                if (!possibleEquips.includes(id)) {
-                  possibleEquips.push(id)
+      for (let poolType = 1; poolType <= 3; poolType++) {
+        // 找到基础池
+        const basePool = developmentPools.value.find(p => 
+          p.开发池名称 === poolname && p.开发池ID === poolType
+        )
+        
+        if (basePool) {
+          // 找到兼容池
+          const compatiblePools = developmentPools.value.filter(p => 
+            Math.abs(p.开发池ID) === poolType && 
+            p.舰ID && basePool.舰ID &&
+            basePool.舰ID.every(id => p.舰ID?.includes(id))
+          )
+          
+          // 合并所有兼容池的出货率
+          const allDropRates: Record<string, number> = {}
+          
+          for (const pool of compatiblePools) {
+            if (!pool.出货率) continue
+            
+            if (has九六式陸攻 || pool.开发池ID > 0) {
+              // 处理正面池或有九六式陸攻的情况
+              for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
+                if (allDropRates[equipIdStr] !== undefined) {
+                  allDropRates[equipIdStr] += rate
+                } else {
+                  allDropRates[equipIdStr] = rate
+                }
+              }
+            } else {
+              // 处理负面池
+              for (const equipIdStr of Object.keys(pool.出货率)) {
+                if (allDropRates[equipIdStr] === undefined) {
+                  allDropRates[equipIdStr] = 0
                 }
               }
             }
           }
+          
+          // 检查此池是否包含所有目标装备
+          const availableEquips = Object.keys(allDropRates)
+            .filter(idStr => allDropRates[idStr] > 0)
+            .map(Number)
+          
+          // 如果此池包含所有目标装备
+          if (targetEquipIds.every(id => availableEquips.includes(id))) {
+            // 将所有装备加入可能列表
+            for (const equipIdStr of Object.keys(allDropRates)) {
+              const equipId = Number(equipIdStr)
+              if (!possibleEquips.includes(equipId)) {
+                possibleEquips.push(equipId)
+              }
+            }
+          }
         }
-      }
-    }
-    
-    // 更新按钮状态
-    for (const key in filterButtonList.value) {
-      const equipId = Number(key)
-      if (!targetEquipIds.includes(equipId)) {
-        // 非目标装备，根据是否在可能列表中决定是否启用
-        filterButtonList.value[key].select = false
       }
     }
     
