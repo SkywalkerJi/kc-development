@@ -528,6 +528,24 @@ function updatePossibleEquipments() {
         // 合并所有兼容池的出货率
         const allDropRates: Record<string, number> = {}
         
+        // 特殊处理：为了确保九六式陆攻可选，先收集所有可能的装备
+        const allEquipsInPool = new Set<number>()
+        for (const pool of compatiblePools) {
+          if (pool.出货率) {
+            for (const equipIdStr of Object.keys(pool.出货率)) {
+              allEquipsInPool.add(Number(equipIdStr))
+            }
+          }
+        }
+        
+        // 如果九六式陆攻不在已选中列表，但在池中存在，将其添加到可选列表
+        if (!has九六式陸攻 && allEquipsInPool.has(168) && 
+            selectedEquipIds.every(id => allEquipsInPool.has(id))) {
+          if (!possibleEquips.includes(168)) {
+            possibleEquips.push(168)
+          }
+        }
+        
         for (const pool of compatiblePools) {
           if (!pool.出货率) continue
           
@@ -902,9 +920,48 @@ function isEquipmentAvailable(equipId: number): boolean {
     return true
   }
   
+  // 特殊处理九六式陆攻(ID 168)
+  // 如果当前装备是九六式陆攻，需要特殊检查
+  if (equipId === 168) {
+    // 查找与当前选中装备组合兼容的池
+    for (const poolname of developmentStore.existPool) {
+      for (let poolType = 1; poolType <= 3; poolType++) {
+        // 找到基础池
+        const basePool = developmentStore.developmentPools.find(p => 
+          p.开发池名称 === poolname && p.开发池ID === poolType
+        )
+        
+        if (basePool) {
+          // 找到兼容池
+          const compatiblePools = developmentStore.developmentPools.filter(p => 
+            Math.abs(p.开发池ID) === poolType && 
+            p.舰ID && basePool.舰ID &&
+            basePool.舰ID.every(id => p.舰ID?.includes(id))
+          )
+          
+          // 不管池ID是正还是负，只需检查是否含有装备
+          const allEquipsInPool = new Set<number>()
+          
+          for (const pool of compatiblePools) {
+            if (pool.出货率) {
+              for (const equipIdStr of Object.keys(pool.出货率)) {
+                allEquipsInPool.add(Number(equipIdStr))
+              }
+            }
+          }
+          
+          // 检查此池是否包含所有已选装备和九六式陆攻
+          if (selectedEquips.every(id => allEquipsInPool.has(id)) && allEquipsInPool.has(168)) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+  
   // 查找与当前选中装备组合兼容的装备
   const has九六式陸攻 = selectedEquips.includes(168)
-  const possibleEquips: number[] = []
   
   // 遍历所有池查找可以包含所有目标装备的池
   for (const poolname of developmentStore.existPool) {

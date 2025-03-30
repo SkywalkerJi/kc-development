@@ -438,6 +438,24 @@ export const useDevelopmentStore = defineStore('development', () => {
             basePool.舰ID.every(id => p.舰ID?.includes(id))
           )
           
+          // 特殊处理：为了确保九六式陆攻可选，先收集所有可能的装备
+          const allEquipsInPool = new Set<number>()
+          for (const pool of compatiblePools) {
+            if (pool.出货率) {
+              for (const equipIdStr of Object.keys(pool.出货率)) {
+                allEquipsInPool.add(Number(equipIdStr))
+              }
+            }
+          }
+          
+          // 如果九六式陆攻不在已选中列表，但在池中存在，将其添加到可选列表
+          if (!has九六式陸攻 && allEquipsInPool.has(168) && 
+              targetEquipIds.every(id => allEquipsInPool.has(id))) {
+            if (!possibleEquips.includes(168)) {
+              possibleEquips.push(168)
+            }
+          }
+          
           // 合并所有兼容池的出货率
           const allDropRates: Record<string, number> = {}
           
