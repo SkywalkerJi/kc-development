@@ -24,8 +24,8 @@ export const useDevelopmentStore = defineStore('development', () => {
   // 读取开发池数据
   const readDevelopmentPools = async () => {
     try {
-      // 从public/data目录获取DevelopmentPool.json
-      const response = await fetch('/data/DevelopmentPool.json')
+      // 从data目录获取DevelopmentPool.json
+      const response = await fetch(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
       const json = await response.json()
       
       // 清空现有数据
@@ -67,8 +67,8 @@ export const useDevelopmentStore = defineStore('development', () => {
   // 读取ctype数据
   const readCtypeData = async () => {
     try {
-      // 从public/data目录获取ctype.json
-      const response = await fetch('/data/ctype.json')
+      // 从data目录获取ctype.json
+      const response = await fetch(`${import.meta.env.BASE_URL}data/ctype.json`)
       const json = await response.json()
       
       // 保存ctype映射

@@ -23,8 +23,8 @@ export const useStart2Store = defineStore('start2', () => {
   // 读取start2.json数据
   const readStart2 = async () => {
     try {
-      // 从public/data目录中获取start2.json
-      const response = await fetch('/data/start2.json')
+      // 使用基础路径获取start2.json
+      const response = await fetch(`${import.meta.env.BASE_URL}data/start2.json`)
       const json = await response.json()
       
       // 清空现有数据
@@ -229,7 +229,7 @@ export const useStart2Store = defineStore('start2', () => {
   const readAbyssalStats = async () => {
     try {
       // 尝试直接获取文本内容
-      const response = await fetch('/data/abyssal_stats.json')
+      const response = await fetch(`${import.meta.env.BASE_URL}data/abyssal_stats.json`)
       const text = await response.text()
       
       console.log('已获取abyssal_stats.json文本, 长度:', text.length)

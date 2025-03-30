@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>重定向</title>
+  <script>
+    // 获取当前URL路径
+    const path = window.location.pathname;
+    const baseUrl = '/kc-development/';
+    
+    // 如果路径以基础URL开头且不等于基础URL（不是根路径）
+    if (path.startsWith(baseUrl) && path !== baseUrl && path !== baseUrl.slice(0, -1)) {
+      // 重定向到基础URL，将路径部分作为hash参数
+      const route = path.replace(baseUrl, '/');
+      window.location.href = `${baseUrl}#${route}`;
+    } else {
+      // 否则重定向到主页
+      window.location.href = baseUrl;
+    }
+  </script>
+</head>
+<body>
+  <p>正在重定向...</p>
+</body>
+</html> 

@@ -747,7 +747,7 @@ function isEquipmentAvailable(equipId: number): boolean {
 function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   if (!equip) return undefined
   const iconId = equip.types[3]
-  return `/data/EquipIcon/${iconId}.png`
+  return `${import.meta.env.BASE_URL}data/EquipIcon/${iconId}.png`
 }
 
 // 在script setup部分添加
