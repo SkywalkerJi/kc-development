@@ -1,0 +1,218 @@
+[
+  {
+    "api_maparea_id": 1,
+    "api_no": 1,
+    "api_opetext": "安全搭载，按抗击坠分5档",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 1,
+    "api_no": 2,
+    "api_opetext": "1/1/1/1/1",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 1,
+    "api_no": 3,
+    "api_opetext": "2/1/1/1/1",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 1,
+    "api_no": 4,
+    "api_opetext": "上路1/1/1/1/1，下路2/1/1/1/1",
+    "api_infotext": "boss点30空优，60空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 1,
+    "api_no": 5,
+    "api_opetext": "1/1/1/1/1",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 1,
+    "api_no": 6,
+    "api_opetext": "下路44/23/21/15/15",
+    "api_infotext": "下路83空优，165空确<br>中路288空优，576空确<br>上路198空优，396空确<br>分歧点系数=3<br>>=30走上<br><28走中"
+  },
+  {
+    "api_maparea_id": 2,
+    "api_no": 1,
+    "api_opetext": "5/4/2/2/2",
+    "api_infotext": "boss点81空优，162空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 2,
+    "api_no": 2,
+    "api_opetext": "4/3/2/2/2",
+    "api_infotext": "boss点41空优，81空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 2,
+    "api_no": 3,
+    "api_opetext": "4/3/2/2/2",
+    "api_infotext": "boss点81空优，162空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 2,
+    "api_no": 4,
+    "api_opetext": "7/7/3/3/3",
+    "api_infotext": "门神84空优，162空确<br>boss点无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 2,
+    "api_no": 5,
+    "api_opetext": "下6/5/2/2/2，上7/4/3/3/3",
+    "api_infotext": "boss点42空优，84空确<br>分歧点系数=1<br>下路索敌>=34<br>上路索敌>=49"
+  },
+  {
+    "api_maparea_id": 3,
+    "api_no": 1,
+    "api_opetext": "5/2/2/2/2",
+    "api_infotext": "boss点42空优，84空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 3,
+    "api_no": 2,
+    "api_opetext": "2/1/1/1/1",
+    "api_infotext": "无制空要求<br>无索敌要求<br>回避撸爷点带一个电探"
+  },
+  {
+    "api_maparea_id": 3,
+    "api_no": 3,
+    "api_opetext": "6/5/3/3/3",
+    "api_infotext": "门神78空优，156空确<br>boss点36空优，72空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 3,
+    "api_no": 4,
+    "api_opetext": "中10/7/4/4/4，下4/3/2/2/2",
+    "api_infotext": "84空优，168空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 3,
+    "api_no": 5,
+    "api_opetext": "上路32/16/15/14/13",
+    "api_infotext": "下路17/9/8/7/7<br>上路门神381空优，762空确<br>下路门神16空均，35空优<br>boss点无制空要求<br>分歧点系数=4<br>上路索敌>=40<br>下路索敌>=28"
+  },
+  {
+    "api_maparea_id": 4,
+    "api_no": 1,
+    "api_opetext": "4/2/1/1/1",
+    "api_infotext": "boss点36空优，72空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 4,
+    "api_no": 2,
+    "api_opetext": "6/6/3/3/3",
+    "api_infotext": "道中84空优，168空确<br>boss点42空优，84空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 4,
+    "api_no": 3,
+    "api_opetext": "6/4/3/3/3",
+    "api_infotext": "boss点155空优，309空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 4,
+    "api_no": 4,
+    "api_opetext": "6/3/2/2/2",
+    "api_infotext": "boss点72空优，144空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 4,
+    "api_no": 5,
+    "api_opetext": "21/11/9/8/7",
+    "api_infotext": "boss点207空优，414空确<br>萌新路线K点252空确，504空确<br>常规路线无索敌要求<br>萌新路线分歧点系数=2<br>索敌>=70"
+  },
+  {
+    "api_maparea_id": 5,
+    "api_no": 1,
+    "api_opetext": "爆表/25/22/17/15",
+    "api_infotext": "大概率126空优，252空确<br>小概率252空优，504空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 5,
+    "api_no": 2,
+    "api_opetext": "25/15/13/10/9",
+    "api_infotext": "出门空袭252空优，504空确<br>boss点176空优，351空确<br>分歧点系数=2<br>索敌>=70"
+  },
+  {
+    "api_maparea_id": 5,
+    "api_no": 3,
+    "api_opetext": "19/11/10/8/8",
+    "api_infotext": "boss点140空优，279空确<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 5,
+    "api_no": 4,
+    "api_opetext": "上路爆表,下路39/23/19/15/13",
+    "api_infotext": "上路309空优，618空确<br>boss点141空优，282空确<br>分歧点系数=2<br>上路索敌>=60<br>下路索敌>=45"
+  },
+  {
+    "api_maparea_id": 5,
+    "api_no": 5,
+    "api_opetext": "中路爆表,上路爆表/40/34/28/26",
+    "api_infotext": "boss点斩前392空优，783空确<br>boss点斩后356空优，711空确<br>中路H点136空均<br>分歧点系数=2<br>上路索敌>=80<br>下路索敌>=66"
+  },
+  {
+    "api_maparea_id": 6,
+    "api_no": 1,
+    "api_opetext": "爆表/37/33/23/22",
+    "api_infotext": "boss点126空优，252空确<br>分歧点系数=4<br>带AS索敌>=25<br>不带AS索敌>=36"
+  },
+  {
+    "api_maparea_id": 6,
+    "api_no": 2,
+    "api_opetext": "爆表/爆表/33/26/23",
+    "api_infotext": "右路门神153空优，306空确<br>boss点126空优，252空确<br>分歧点系数=3<br>右路索敌>=50<br>40～43固定走I点进boss"
+  },
+  {
+    "api_maparea_id": 6,
+    "api_no": 3,
+    "api_opetext": "15/9/7/7/6",
+    "api_infotext": "无制空要求<br>分歧点系数=3<br>索敌>=40"
+  },
+  {
+    "api_maparea_id": 6,
+    "api_no": 4,
+    "api_opetext": "全部爆表",
+    "api_infotext": "boss点168空优，336空确<br>左路空袭55空均，123空优<br>右路道中198空优，396空确<br>无索敌要求<br>boss点5航程"
+  },
+  {
+    "api_maparea_id": 6,
+    "api_no": 5,
+    "api_opetext": "中爆表/27/23/21/16，上略高",
+    "api_infotext": "陆航均均，本队131均，294优<br>陆航均劣，本队144均，324优<br>陆航劣劣，本队158均，356优<br>陆航单均，本队171均，384优<br>陆航单劣，本队186均，417优<br>陆航第一队106劣，212均<br>boss点5航程"
+  },
+  {
+    "api_maparea_id": 7,
+    "api_no": 1,
+    "api_opetext": "1/1/1/1/1",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 7,
+    "api_no": 2,
+    "api_opetext": "P2：43/23/19/15/13",
+    "api_infotext": "P1无制空要求<br>P2斩前359空优，717空确<br>P2斩后266空优，531空确<br>分歧点系数=4<br>P1常规阵容无索敌要求<br>P2索敌>=69"
+  },
+  {
+    "api_maparea_id": 7,
+    "api_no": 3,
+    "api_opetext": "P2：13/7/7/6/6",
+    "api_infotext": "无制空要求<br>无索敌要求"
+  },
+  {
+    "api_maparea_id": 7,
+    "api_no": 4,
+    "api_opetext": "23/14/11/11/10",
+    "api_infotext": "道中空袭321空优，642空确<br>boss点非斩杀146空优，291空确<br>boss点斩杀236空优，471空确<br>分歧点系数=4<br>通常阵容索敌>=37<br>偷资源索敌>=47<br>boss点2航程"
+  },
+  {
+    "api_maparea_id": 7,
+    "api_no": 5,
+    "api_opetext": "P3：5/3/3/1/1",
+    "api_infotext": "空袭平时123均，P3斩杀随机224<br>P1、P3boss点0制空<br>P2boss171空优，没必要拿<br>P3斩杀门神47空均，104空优<br>分歧点系数=4，P3阶段根据配置<br>索敌>=58/63/68/73"
+  }
+]
