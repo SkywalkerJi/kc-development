@@ -35,4 +35,17 @@ describe('computeEnabledEquipIds — B3', () => {
     // 10 在池 1，30 在池 2，没有任何单池同时含两者
     expect(computeEnabledEquipIds(pools, ['A'], [10])).not.toContain(30)
   })
+
+  // 这条锁住的是「已选装备自己也可能不在启用集合里」这个前置条件。
+  // 10 与 30 分处两个互不相容的池类型，没有任何池能同时准入两者，
+  // 于是启用集合为空 —— 包括这两个已经被选中的装备。
+  //
+  // 它是 View 里 toggleEquipment 守卫必须写成
+  //   if (!state.enabled && !state.select) return
+  // 而不能只写 !state.enabled 的直接依据：
+  // 后者会让这两个按钮永久无法取消选择，用户卡死。
+  // （实测真实数据下，先选 10 再选 55 就能进入这个状态。）
+  it('联合准入失败时启用集合可以不含已选装备本身', () => {
+    expect(computeEnabledEquipIds(pools, ['A'], [10, 30])).toEqual([])
+  })
 })

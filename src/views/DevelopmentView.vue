@@ -197,7 +197,9 @@ import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, PoolType, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
-import { findCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits } from '@/core/poolMatching'
+import {
+  findCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits, EQUIP_96_LAND_ATTACKER,
+} from '@/core/poolMatching'
 import { selectPoolType, deriveRecipes, evaluateRecipe, sortResults } from '@/core/recipe'
 import { classifyEquip, formatRateDetail, isAffordable, sortEquipIds } from '@/core/grouping'
 import { computeEnabledEquipIds } from '@/core/enabledSet'
@@ -359,7 +361,7 @@ function refreshResults() {
       if (!base) continue
 
       const compatible = findCompatiblePools(pools(), base, t)
-      const rates = mergeDropRates(compatible, targets.includes(168))
+      const rates = mergeDropRates(compatible, targets.includes(EQUIP_96_LAND_ATTACKER))
       if (!poolAdmits(rates, targets)) continue
 
       for (const recipe of deriveRecipes(t, targets, start2Store.equipList))
@@ -444,6 +446,12 @@ function normalizeResource(index: number) {
 
 // 切换装备选择状态
 function toggleEquipment(equipId: number) {
+  // 守卫必须与模板 :disabled 的表达式**对称**（`!enabled && !select`）。
+  // 只写 `!enabled` 会让「已选中但当前组合下不可用」的装备无法取消 ——
+  // 而模板并没有真的禁用它（保留了 !select 那一半），
+  // 于是表现为「按钮能点、点了没反应」，比直接禁用更糟。
+  // 这种状态在真实数据下可达，见 enabledSet 的
+  // 「联合准入失败时启用集合可以不含已选装备本身」一测。
   const state = developmentStore.filterButtonList[equipId]
   if (!state || (!state.enabled && !state.select)) return
 
