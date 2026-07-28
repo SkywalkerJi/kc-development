@@ -129,11 +129,11 @@
                 <button 
                   v-for="equipId in group" 
                   :key="equipId"
-                  :class="{ 
-                    'selected': developmentStore.filterButtonList[equipId].select, 
-                    'disabled': !isEquipmentAvailable(Number(equipId)) 
+                  :class="{
+                    'selected': developmentStore.filterButtonList[equipId].select,
+                    'disabled': !developmentStore.filterButtonList[equipId].enabled
                   }"
-                  :disabled="!isEquipmentAvailable(Number(equipId)) && !developmentStore.filterButtonList[equipId].select"
+                  :disabled="!developmentStore.filterButtonList[equipId].enabled && !developmentStore.filterButtonList[equipId].select"
                   @click="toggleEquipment(Number(equipId))"
                 >
                   <img 
@@ -177,7 +177,7 @@
                 <td>{{ result.公式[2] }}</td>
                 <td>{{ result.公式[3] }}</td>
                 <td>{{ result.总资源 }}</td>
-                <td>{{ result.池类型 }}</td>
+                <td>{{ poolTypeLabel(result.池ID) }}</td>
                 <td>{{ result.出货率 }}%</td>
                 <td>{{ result.失败率 }}%</td>
               </tr>
@@ -194,22 +194,38 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import type { Api_EquipInfo } from '@/types/equipTypes'
-import type { DevelopmentPoolData as DevelopmentPool, DevelopResult } from '@/core/types'
+import type { DevelopResult, PoolType, Resources } from '@/core/types'
+import { poolTypeLabel } from '@/core/types'
+import type { DevelopmentPoolClass } from '@/core/developmentPool'
+import { findCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits } from '@/core/poolMatching'
+import { selectPoolType, deriveRecipes, evaluateRecipe, sortResults } from '@/core/recipe'
+import { classifyEquip, formatRateDetail, isAffordable, sortEquipIds } from '@/core/grouping'
+import { computeEnabledEquipIds } from '@/core/enabledSet'
 
 // 获取 store
 const developmentStore = useDevelopmentStore()
 const start2Store = useStart2Store()
 
+// Pinia 的 setup store 经由 Vue 的 UnwrapRef 暴露 developmentPools 时，
+// 会把类里的 private 字段（DevelopmentPoolClass.text）从映射类型里丢掉，
+// 导致暴露出来的元素类型结构上不再是 DevelopmentPoolClass。
+// 运行时仍是 createPools() 生成的真实实例，这里只是让类型对齐事实。
+const pools = () => developmentStore.developmentPools as unknown as DevelopmentPoolClass[]
+
 // 状态数据
-const selectedPool = ref<DevelopmentPool | null>(null)
+const selectedPool = ref<DevelopmentPoolClass | null>(null)
 const resources = ref<number[]>([10, 10, 10, 10])
+const currentPoolEquipments = ref<Record<number, number>>({})
+const equipRatesDetailMap = ref<Record<number, number[]>>({})
+const developmentResults = ref<DevelopResult[]>([])
+
 const availablePools = computed(() => {
   // 使用Map对相同开发池名称进行去重
-  const poolMap = new Map<string, DevelopmentPool>()
-  
-  developmentStore.developmentPools
-    .filter(pool => 
-      pool.开发池ID >= 0 && 
+  const poolMap = new Map<string, DevelopmentPoolClass>()
+
+  pools()
+    .filter(pool =>
+      pool.开发池ID >= 0 &&
       !pool.最低资源 &&
       developmentStore.existPool.includes(pool.开发池名称)
     )
@@ -218,84 +234,43 @@ const availablePools = computed(() => {
         poolMap.set(pool.开发池名称, pool)
       }
     })
-  
+
   return Array.from(poolMap.values())
 })
-const developmentResults = ref<DevelopResult[]>([])
-const flagshipInfo = ref<{ pool: DevelopmentPool, shipInfo: any } | null>(null)
-const isCurrentFlagshipSelected = computed(() => 
-  flagshipInfo.value && selectedPool.value && 
+const flagshipInfo = ref<{ pool: DevelopmentPoolClass, shipInfo: any } | null>(null)
+const isCurrentFlagshipSelected = computed(() =>
+  flagshipInfo.value && selectedPool.value &&
   flagshipInfo.value.pool.开发池名称 === selectedPool.value.开发池名称
 )
 
-// 当前可出货装备的分类
-const currentPoolEquipments = ref<{ [id: number]: number }>({})
 // 判断是否有选中的装备
 const hasSelectedEquipments = computed(() => {
   return developmentStore.getSelectedEquipIds().length > 0
 })
-const targetEquipments = computed(() => {
-  const equipIds = Object.keys(developmentStore.filterButtonList)
-    .map(Number)
-    .filter(id => developmentStore.filterButtonList[id].select)
-  
-  return equipIds.map(id => start2Store.equipList[id])
-    .filter(equip => equip !== undefined && currentPoolEquipments.value[equip.id] !== undefined)
+const groupedEquipments = computed(() => {
+  const groups = { replaced: [] as Api_EquipInfo[], insufficient: [] as Api_EquipInfo[],
+                   target: [] as Api_EquipInfo[], other: [] as Api_EquipInfo[] }
+  const targets = new Set(developmentStore.getSelectedEquipIds())
+  const ids = sortEquipIds(
+    Object.keys(currentPoolEquipments.value).map(Number), start2Store.equipList,
+  )
+  for (const id of ids) {
+    const equip = start2Store.equipList[id]
+    if (!equip) continue
+    const g = classifyEquip(
+      currentPoolEquipments.value[id],
+      isAffordable(resources.value, equip.broken),
+      targets.has(id),
+    )
+    groups[g].push(equip)
+  }
+  return groups
 })
-const otherEquipments = computed(() => {
-  // 可出货但不是目标装备的
-  const ids = Object.keys(currentPoolEquipments.value).map(Number)
-    .filter(id => {
-      const equip = start2Store.equipList[id]
-      if (!equip) return false
-      
-      // 检查是否满足资源要求
-      const hasEnoughResources = resources.value[0] >= equip.broken[0] * 10 && 
-                                resources.value[1] >= equip.broken[1] * 10 && 
-                                resources.value[2] >= equip.broken[2] * 10 && 
-                                resources.value[3] >= equip.broken[3] * 10
-      
-      // 不是目标且有足够资源
-      return hasEnoughResources && 
-             currentPoolEquipments.value[id] > 0 && 
-             !targetEquipments.value.some(e => e.id === id)
-    })
-  
-  return ids.map(id => start2Store.equipList[id])
-    .filter(equip => equip !== undefined)
-})
-const insufficientEquipments = computed(() => {
-  // 资源不足的装备
-  const ids = Object.keys(currentPoolEquipments.value).map(Number)
-    .filter(id => {
-      const equip = start2Store.equipList[id]
-      if (!equip) return false
-      
-      // 检查是否不满足资源要求
-      const hasInsufficientResources = resources.value[0] < equip.broken[0] * 10 || 
-                                      resources.value[1] < equip.broken[1] * 10 || 
-                                      resources.value[2] < equip.broken[2] * 10 || 
-                                      resources.value[3] < equip.broken[3] * 10
-      
-      return hasInsufficientResources && 
-             currentPoolEquipments.value[id] > 0 &&
-             !targetEquipments.value.some(e => e.id === id)
-    })
-  
-  return ids.map(id => start2Store.equipList[id])
-    .filter(equip => equip !== undefined)
-})
-const replacedEquipments = computed(() => {
-  // 被替换的装备（出货率为0）
-  const ids = Object.keys(currentPoolEquipments.value).map(Number)
-    .filter(id => currentPoolEquipments.value[id] === 0 && 
-                 !targetEquipments.value.some(e => e.id === id) &&
-                 !otherEquipments.value.some(e => e.id === id) &&
-                 !insufficientEquipments.value.some(e => e.id === id))
-  
-  return ids.map(id => start2Store.equipList[id])
-    .filter(equip => equip !== undefined)
-})
+
+const targetEquipments = computed(() => groupedEquipments.value.target)
+const otherEquipments = computed(() => groupedEquipments.value.other)
+const insufficientEquipments = computed(() => groupedEquipments.value.insufficient)
+const replacedEquipments = computed(() => groupedEquipments.value.replaced)
 
 // 装备分组
 const equipmentGroups = computed(() => {
@@ -346,16 +321,78 @@ const equipmentGroups = computed(() => {
 })
 
 // 初始化数据
+function refreshCurrentPool() {
+  if (!selectedPool.value) return
+  const res = resources.value as unknown as Resources
+  const poolType = selectPoolType(res)
+  const compatible = findCompatiblePools(
+    pools(), selectedPool.value as unknown as DevelopmentPoolClass, poolType, res,
+  )
+  // 宽池在前：舰ID 多的排前面，数量相同则出货率条目多的排前面
+  compatible.sort((a, b) =>
+    a.舰ID.length === b.舰ID.length
+      ? Object.keys(b.出货率 ?? {}).length - Object.keys(a.出货率 ?? {}).length
+      : b.舰ID.length - a.舰ID.length,
+  )
+
+  const details = mergeDropRateDetails(compatible)
+  const totals: Record<number, number> = {}
+  const detailMap: Record<number, number[]> = {}
+  for (const [id, list] of details) {
+    totals[id] = list.reduce((s, v) => s + v, 0)
+    detailMap[id] = list
+  }
+  currentPoolEquipments.value = totals
+  equipRatesDetailMap.value = detailMap
+}
+
+function refreshResults() {
+  const targets = developmentStore.getSelectedEquipIds()
+  if (targets.length === 0) { developmentResults.value = []; return }
+
+  const out: DevelopResult[] = []
+  for (const name of developmentStore.existPool) {
+    for (let t = 1 as PoolType; t <= 3; t = (t + 1) as PoolType) {
+      const base = pools().find(
+        (p) => p.开发池名称 === name && p.开发池ID === t,
+      )
+      if (!base) continue
+
+      const compatible = findCompatiblePools(pools(), base, t)
+      const rates = mergeDropRates(compatible, targets.includes(168))
+      if (!poolAdmits(rates, targets)) continue
+
+      for (const recipe of deriveRecipes(t, targets, start2Store.equipList))
+        out.push(evaluateRecipe(name, t, recipe, rates, targets, start2Store.equipList))
+    }
+  }
+  developmentResults.value = sortResults(out)
+}
+
+function refreshEnabled() {
+  const targets = developmentStore.getSelectedEquipIds()
+  const enabled = new Set(
+    computeEnabledEquipIds(
+      pools(), developmentStore.existPool, targets,
+    ),
+  )
+  for (const key of Object.keys(developmentStore.filterButtonList)) {
+    const id = Number(key)
+    developmentStore.filterButtonList[id].enabled = targets.length === 0 || enabled.has(id)
+  }
+}
+
+// 初始化数据
 onMounted(async () => {
   // 初始化开发数据
   await developmentStore.initializeData()
-  
+
   // 设置初始选择的池
   if (availablePools.value.length > 0) {
     selectedPool.value = availablePools.value[0]
-    updateCurrentPoolEquipments()
+    refreshCurrentPool()
   }
-  
+
   // 测试数据 - 模拟设置当前秘书舰（实际应从游戏中获取）
   // 这里只是演示，实际应用中应该通过游戏API获取
   const testShipId = 1; // 假设为长门
@@ -365,97 +402,23 @@ onMounted(async () => {
       flagshipInfo.value = result
     }
   }
-  
+
   // 初始计算
-  calculateResults()
+  refreshResults()
 })
 
 // 监听资源变化，更新结果
 watch(resources, () => {
-  updateCurrentPoolEquipments()
-  calculateResults()
+  refreshCurrentPool()
+  refreshResults()
+  refreshEnabled()
 }, { deep: true })
-
-// 更新当前池装备数据
-function updateCurrentPoolEquipments() {
-  if (!selectedPool.value) return
-  
-  currentPoolEquipments.value = {}
-  
-  // 确定当前资源配置对应的池类型
-  let poolType = 3 // 默认为油钢池
-  
-  if (resources.value[3] > resources.value[0] && 
-      resources.value[3] > resources.value[1] && 
-      resources.value[3] > resources.value[2]) {
-    poolType = 1 // 铝池
-  } else if (resources.value[1] > resources.value[0] && 
-             resources.value[1] > resources.value[2]) {
-    poolType = 2 // 弹池
-  }
-  
-  // 寻找符合条件的开发池 - 修正兼容池的筛选逻辑
-  const compatiblePools = developmentStore.developmentPools.filter(pool => 
-    Math.abs(pool.开发池ID) === poolType && 
-    pool.舰ID && selectedPool.value?.舰ID &&
-    // 修正：确保pool.舰ID包含了selectedPool.舰ID中的所有ID（是超集）
-    selectedPool.value.舰ID.every(id => pool.舰ID?.includes(id)) &&
-    (pool.最低资源 === null || pool.最低资源 === undefined || 
-      (resources.value[0] >= pool.最低资源[0] && 
-       resources.value[1] >= pool.最低资源[1] && 
-       resources.value[2] >= pool.最低资源[2] && 
-       resources.value[3] >= pool.最低资源[3]))
-  )
-  
-  // 按照C#代码中的逻辑实现
-  // 创建一个记录每个装备出货率变化的Map
-  const equipRatesMap: Record<number, number[]> = {}
-  
-  // 遍历所有兼容池，并记录每个装备在每个池中的出货率
-  for (let i = 0; i < compatiblePools.length; i++) {
-    const pool = compatiblePools[i]
-    if (!pool.出货率) continue
-    
-    for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
-      const equipId = Number(equipIdStr)
-      
-      if (!equipRatesMap[equipId]) {
-        equipRatesMap[equipId] = []
-        // 如果不是第一个池，为之前的池添加0占位
-        if (i > 0) {
-          equipRatesMap[equipId].push(0)
-        }
-      }
-      
-      equipRatesMap[equipId].push(rate)
-      
-      // 同时更新总出货率
-      if (currentPoolEquipments.value[equipId] !== undefined) {
-        currentPoolEquipments.value[equipId] += rate
-      } else {
-        currentPoolEquipments.value[equipId] = rate
-      }
-    }
-  }
-  
-  // 保存详细的出货率数据供显示使用
-  equipRatesDetailMap.value = equipRatesMap
-  
-  // 如果没有结果，检查一下数据
-  if (Object.keys(currentPoolEquipments.value).length === 0) {
-    console.log('找不到匹配的开发池', {
-      poolType,
-      selectedPoolId: selectedPool.value.开发池ID,
-      selectedPoolShipIds: selectedPool.value.舰ID,
-      resources: resources.value
-    })
-  }
-}
 
 // 切换池
 function onPoolChanged() {
-  updateCurrentPoolEquipments()
-  calculateResults()
+  refreshCurrentPool()
+  refreshResults()
+  refreshEnabled()
 }
 
 // 验证资源输入
@@ -474,421 +437,44 @@ function validateResource(index: number) {
 // 标准化资源输入（失焦时）
 function normalizeResource(index: number) {
   validateResource(index)
-  updateCurrentPoolEquipments()
-  calculateResults()
+  refreshCurrentPool()
+  refreshResults()
+  refreshEnabled()
 }
 
 // 切换装备选择状态
 function toggleEquipment(equipId: number) {
+  const state = developmentStore.filterButtonList[equipId]
+  if (!state || (!state.enabled && !state.select)) return
+
   developmentStore.toggleEquipmentSelect(equipId)
-  // 修改：更新可用装备列表后再计算公式
-  updatePossibleEquipments()
-  calculateDevelopmentResults()
-  
+  refreshEnabled()
+  refreshResults()
+
   // 如果有可用公式，自动应用第一个
   if (developmentResults.value.length > 0) {
     selectResult(developmentResults.value[0])
   }
 }
 
-// 新增：获取可能的装备列表
-function updatePossibleEquipments() {
-  const selectedEquipIds = developmentStore.getSelectedEquipIds()
-  
-  // 如果没有选中的装备，所有装备都可用
-  if (selectedEquipIds.length === 0) {
-    for (const key in developmentStore.filterButtonList) {
-      developmentStore.filterButtonList[key].select = false
-    }
-    return
-  }
-  
-  // 九六式陸攻特殊处理标记
-  const has九六式陸攻 = selectedEquipIds.includes(168)
-  
-  // 收集可能的装备ID
-  const possibleEquips: number[] = []
-  
-  // 遍历所有池查找可包含所有目标装备的池
-  for (const poolname of developmentStore.existPool) {
-    for (let poolType = 1; poolType <= 3; poolType++) {
-      // 找到基础池
-      const basePool = developmentStore.developmentPools.find(p => 
-        p.开发池名称 === poolname && p.开发池ID === poolType
-      )
-      
-      if (basePool) {
-        // 找到兼容池
-        const compatiblePools = developmentStore.developmentPools.filter(p => 
-          Math.abs(p.开发池ID) === poolType && 
-          p.舰ID && basePool.舰ID &&
-          basePool.舰ID.every(id => p.舰ID?.includes(id))
-        )
-        
-        // 合并所有兼容池的出货率
-        const allDropRates: Record<string, number> = {}
-        
-        // 特殊处理：为了确保九六式陆攻可选，先收集所有可能的装备
-        const allEquipsInPool = new Set<number>()
-        for (const pool of compatiblePools) {
-          if (pool.出货率) {
-            for (const equipIdStr of Object.keys(pool.出货率)) {
-              allEquipsInPool.add(Number(equipIdStr))
-            }
-          }
-        }
-        
-        // 如果九六式陆攻不在已选中列表，但在池中存在，将其添加到可选列表
-        if (!has九六式陸攻 && allEquipsInPool.has(168) && 
-            selectedEquipIds.every(id => allEquipsInPool.has(id))) {
-          if (!possibleEquips.includes(168)) {
-            possibleEquips.push(168)
-          }
-        }
-        
-        for (const pool of compatiblePools) {
-          if (!pool.出货率) continue
-          
-          if (has九六式陸攻 || pool.开发池ID > 0) {
-            // 处理正面池或有九六式陸攻的情况
-            for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
-              if (allDropRates[equipIdStr] !== undefined) {
-                allDropRates[equipIdStr] += rate
-              } else {
-                allDropRates[equipIdStr] = rate
-              }
-            }
-          } else {
-            // 处理负面池
-            for (const equipIdStr of Object.keys(pool.出货率)) {
-              if (allDropRates[equipIdStr] === undefined) {
-                allDropRates[equipIdStr] = 0
-              }
-            }
-          }
-        }
-        
-        // 检查此池是否有所有目标装备出货
-        const availableEquips = Object.keys(allDropRates)
-          .filter(idStr => allDropRates[idStr] > 0)
-          .map(Number)
-        
-        // 如果此池包含所有目标装备
-        if (selectedEquipIds.every(id => availableEquips.includes(id))) {
-          // 将所有装备加入可能列表
-          for (const equipIdStr of Object.keys(allDropRates)) {
-            const equipId = Number(equipIdStr)
-            if (!possibleEquips.includes(equipId)) {
-              possibleEquips.push(equipId)
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // 更新按钮状态
-  for (const key in developmentStore.filterButtonList) {
-    const equipId = Number(key)
-    // 已选装备保持选中状态，未选装备根据是否在可能列表中决定是否启用
-    if (!selectedEquipIds.includes(equipId)) {
-      if (possibleEquips.includes(equipId)) {
-        // 在可能列表中的装备可选
-        developmentStore.filterButtonList[key].select = false
-      }
-    }
-  }
-  
-  return possibleEquips
-}
-
 // 计算装备组总出货率
 function calculateTotalRate(equipments: Api_EquipInfo[]): number {
-  return equipments.reduce((sum, equip) => 
+  return equipments.reduce((sum, equip) =>
     sum + (currentPoolEquipments.value[equip.id] || 0), 0)
 }
 
-// 获取装备出货率（修改为支持详细格式）
 function getEquipRate(equipId: number): string {
-  // 如果有详细的出货率变化数据，格式化为类似"6%-4%"的形式
-  if (equipRatesDetailMap.value[equipId]) {
-    const rates = equipRatesDetailMap.value[equipId]
-    
-    // 按照正数/负数分组
-    const positiveRates: string[] = []
-    const negativeRates: string[] = []
-    let hasNonZero = false
-    
-    // 处理每个出率
-    for (let i = 0; i < rates.length; i++) {
-      if (rates[i] === 0) continue // 跳过0值
-      
-      hasNonZero = true
-      
-      if (rates[i] > 0) {
-        positiveRates.push(`+${rates[i]}%`)
-      } else {
-        negativeRates.push(`${rates[i]}%`) // 负数自带负号
-      }
-    }
-    
-    // 如果没有非零值，显示0%
-    if (!hasNonZero) return '0%'
-    
-    // 正数在前，负数在后（去掉第一个正数的+号）
-    let result = ''
-    if (positiveRates.length > 0) {
-      result += positiveRates[0].substring(1) // 第一个正数不显示+号
-      for (let i = 1; i < positiveRates.length; i++) {
-        result += positiveRates[i] // 其他正数保留+号
-      }
-    }
-    
-    // 添加所有负数
-    for (const rate of negativeRates) {
-      result += rate
-    }
-    
-    return result
-  }
-  
-  // 如果没有详细数据，直接返回总和
-  return (currentPoolEquipments.value[equipId] || 0) + '%'
+  const detail = equipRatesDetailMap.value[equipId]
+  if (detail) return formatRateDetail(detail, '%')
+  return `${currentPoolEquipments.value[equipId] ?? 0}%`
 }
 
-// 获取装备资源要求文本
 function getResourceRequirement(equip: Api_EquipInfo): string {
-  let result = ''
-  
-  if (equip.broken[0] > 1) {
-    result += `油${equip.broken[0] * 10} `
-  }
-  if (equip.broken[1] > 1) {
-    result += `弹${equip.broken[1] * 10} `
-  }
-  if (equip.broken[2] > 1) {
-    result += `钢${equip.broken[2] * 10} `
-  }
-  if (equip.broken[3] > 1) {
-    result += `铝${equip.broken[3] * 10} `
-  }
-  
-  return result
-}
-
-// 计算装备开发结果，使用更符合C#原版的逻辑
-function calculateDevelopmentResults() {
-  const targetEquipIds = developmentStore.getSelectedEquipIds()
-  
-  // 如果没有选中装备，清空结果并返回
-  if (targetEquipIds.length === 0) {
-    developmentResults.value = []
-    return
-  }
-  
-  // 记录结果
-  const results: DevelopResult[] = []
-  // 记录可能的装备ID
-  const possibleEquips: number[] = []
-  // 九六式陸攻特殊处理标记
-  const hasRadar168 = targetEquipIds.includes(168)
-  
-  // 针对每个池名称和池类型组合生成可能的结果
-  for (const poolname of developmentStore.existPool) {
-    for (let poolType = 1; poolType <= 3; poolType++) {
-      // 查找具有该名称和ID的基础开发池
-      const basePool = developmentStore.developmentPools.find(p => 
-        p.开发池名称 === poolname && p.开发池ID === poolType
-      )
-      
-      if (basePool) {
-        // 找到与基础池兼容的所有池
-        const compatiblePools = developmentStore.developmentPools.filter(p => 
-          Math.abs(p.开发池ID) === poolType && 
-          p.舰ID && basePool.舰ID &&
-          basePool.舰ID.every(id => p.舰ID?.includes(id))
-        )
-        
-        // 合并所有兼容池的出货率
-        const allDropRates: Record<string, number> = {}
-        
-        for (const pool of compatiblePools) {
-          if (!pool.出货率) continue
-          
-          // 正式池或有九六式陸攻时，正常添加出货率
-          if (hasRadar168 || pool.开发池ID > 0) {
-            for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
-              if (allDropRates[equipIdStr] !== undefined) {
-                allDropRates[equipIdStr] += rate
-              } else {
-                allDropRates[equipIdStr] = rate
-              }
-            }
-          } else {
-            // 负ID池只添加零出货率
-            for (const equipIdStr of Object.keys(pool.出货率)) {
-              if (allDropRates[equipIdStr] === undefined) {
-                allDropRates[equipIdStr] = 0
-              }
-            }
-          }
-        }
-        
-        // 检查此池是否包含所有目标装备
-        const availableEquipIds = Object.keys(allDropRates)
-          .filter(idStr => allDropRates[idStr] > 0)
-          .map(Number)
-        
-        if (targetEquipIds.every(id => availableEquipIds.includes(id))) {
-          // 记录所有可能的装备
-          for (const equipIdStr of Object.keys(allDropRates)) {
-            const equipId = Number(equipIdStr)
-            if (!possibleEquips.includes(equipId)) {
-              possibleEquips.push(equipId)
-            }
-          }
-          
-          // 根据池类型生成公式
-          const formulaList: number[][] = []
-          
-          if (poolType === 1) { // 铝池
-            const formula = [10, 10, 10, 10]
-            
-            // 计算所需最低资源
-            for (const targetId of targetEquipIds) {
-              const equip = start2Store.equipList[targetId]
-              if (equip) {
-                for (let i = 0; i < 4; i++) {
-                  formula[i] = Math.max(formula[i], equip.broken[i] * 10)
-                }
-              }
-            }
-            
-            // 铝池：铝必须最高
-            if (formula[3] <= formula[0]) formula[3] = formula[0] + 1
-            if (formula[3] <= formula[1]) formula[3] = formula[1] + 1
-            if (formula[3] <= formula[2]) formula[3] = formula[2] + 1
-            
-            // 九六式陸攻专用公式
-            if (hasRadar168) {
-              formula[0] = 240
-              formula[1] = 260
-              formula[3] = 250
-            }
-            
-            formulaList.push(formula)
-          } else if (poolType === 2) { // 弹池
-            const formula = [10, 10, 10, 10]
-            
-            // 计算所需最低资源
-            for (const targetId of targetEquipIds) {
-              const equip = start2Store.equipList[targetId]
-              if (equip) {
-                for (let i = 0; i < 4; i++) {
-                  formula[i] = Math.max(formula[i], equip.broken[i] * 10)
-                }
-              }
-            }
-            
-            // 弹池：弹必须最高
-            if (formula[1] <= formula[0]) formula[1] = formula[0] + 1
-            if (formula[1] <= formula[2]) formula[1] = formula[2] + 1
-            if (formula[1] < formula[3]) formula[1] = formula[3]
-            
-            formulaList.push(formula)
-          } else if (poolType === 3) { // 油钢池
-            const formula1 = [10, 10, 10, 10]
-            const formula2 = [10, 10, 10, 10]
-            
-            // 计算所需最低资源
-            for (const targetId of targetEquipIds) {
-              const equip = start2Store.equipList[targetId]
-              if (equip) {
-                for (let i = 0; i < 4; i++) {
-                  formula1[i] = Math.max(formula1[i], equip.broken[i] * 10)
-                  formula2[i] = Math.max(formula2[i], equip.broken[i] * 10)
-                }
-              }
-            }
-            
-            // 检查是否需要特殊处理
-            if ((formula1[0] < formula1[1] && formula1[0] < formula1[3]) &&
-                (formula1[2] < formula1[1] && formula1[2] < formula1[3])) {
-              // 第一方案：油最高
-              if (formula1[0] < formula1[1]) formula1[0] = formula1[1]
-              if (formula1[0] < formula1[3]) formula1[0] = formula1[3]
-              formulaList.push(formula1)
-              
-              // 第二方案：钢最高
-              if (formula2[2] < formula2[1]) formula2[2] = formula2[1]
-              if (formula2[2] < formula2[3]) formula2[2] = formula2[3]
-              formulaList.push(formula2)
-            } else {
-              // 无需特殊处理
-              formulaList.push(formula1)
-            }
-          }
-          
-          // 计算每个公式的结果
-          for (const formula of formulaList) {
-            // 计算目标装备出货率
-            let targetRate = 0
-            let otherRate = 0
-            
-            for (const [equipIdStr, rate] of Object.entries(allDropRates)) {
-              const equipId = Number(equipIdStr)
-              
-              if (targetEquipIds.includes(equipId)) {
-                targetRate += rate
-                continue
-              }
-              
-              // 检查是否满足资源条件
-              const equip = start2Store.equipList[equipId]
-              if (equip && 
-                  formula[0] >= equip.broken[0] * 10 && 
-                  formula[1] >= equip.broken[1] * 10 && 
-                  formula[2] >= equip.broken[2] * 10 && 
-                  formula[3] >= equip.broken[3] * 10) {
-                otherRate += rate
-              }
-            }
-            
-            const failRate = 100 - targetRate - otherRate
-            const totalResource = formula.reduce((sum, val) => sum + val, 0)
-            
-            results.push({
-              池名: poolname,
-              池ID: poolType,
-              公式: [...formula],
-              总资源: totalResource,
-              出货率: targetRate,
-              失败率: failRate,
-              池类型: poolType === 1 ? '铝' : poolType === 2 ? '弹' : '油钢'
-            })
-          }
-        }
-      }
-    }
-  }
-  
-  // 结果排序：先按出货率降序，如果出货率相同则按总资源升序，如果总资源也差不多则按失败率降序
-  results.sort((a, b) => {
-    if (a.出货率 !== b.出货率) {
-      return b.出货率 - a.出货率
-    }
-    if (Math.abs(a.总资源 - b.总资源) > 1) {
-      return a.总资源 - b.总资源
-    }
-    return b.失败率 - a.失败率
-  })
-  
-  developmentResults.value = results
-}
-
-// 替换原来的计算结果方法
-function calculateResults() {
-  calculateDevelopmentResults()
+  const labels = ['油', '弹', '钢', '铝']
+  let out = ''
+  for (let i = 0; i < 4; i++)
+    if (equip.broken[i] > 1) out += `${labels[i]}${equip.broken[i] * 10} `
+  return out
 }
 
 // 选择结果
@@ -898,124 +484,13 @@ function selectResult(result: DevelopResult) {
   if (pool) {
     selectedPool.value = pool
   }
-  
+
   // 设置资源
   resources.value = [...result.公式]
-  
-  // 更新数据
-  updateCurrentPoolEquipments()
-}
 
-// 检查装备是否可用
-function isEquipmentAvailable(equipId: number): boolean {
-  // 如果是已选装备，始终可用
-  if (developmentStore.filterButtonList[equipId]?.select) {
-    return true
-  }
-  
-  const selectedEquips = developmentStore.getSelectedEquipIds()
-  
-  // 如果没有选择任何装备，所有装备都可用
-  if (selectedEquips.length === 0) {
-    return true
-  }
-  
-  // 特殊处理九六式陆攻(ID 168)
-  // 如果当前装备是九六式陆攻，需要特殊检查
-  if (equipId === 168) {
-    // 查找与当前选中装备组合兼容的池
-    for (const poolname of developmentStore.existPool) {
-      for (let poolType = 1; poolType <= 3; poolType++) {
-        // 找到基础池
-        const basePool = developmentStore.developmentPools.find(p => 
-          p.开发池名称 === poolname && p.开发池ID === poolType
-        )
-        
-        if (basePool) {
-          // 找到兼容池
-          const compatiblePools = developmentStore.developmentPools.filter(p => 
-            Math.abs(p.开发池ID) === poolType && 
-            p.舰ID && basePool.舰ID &&
-            basePool.舰ID.every(id => p.舰ID?.includes(id))
-          )
-          
-          // 不管池ID是正还是负，只需检查是否含有装备
-          const allEquipsInPool = new Set<number>()
-          
-          for (const pool of compatiblePools) {
-            if (pool.出货率) {
-              for (const equipIdStr of Object.keys(pool.出货率)) {
-                allEquipsInPool.add(Number(equipIdStr))
-              }
-            }
-          }
-          
-          // 检查此池是否包含所有已选装备和九六式陆攻
-          if (selectedEquips.every(id => allEquipsInPool.has(id)) && allEquipsInPool.has(168)) {
-            return true
-          }
-        }
-      }
-    }
-    return false
-  }
-  
-  // 查找与当前选中装备组合兼容的装备
-  const has九六式陸攻 = selectedEquips.includes(168)
-  
-  // 遍历所有池查找可以包含所有目标装备的池
-  for (const poolname of developmentStore.existPool) {
-    for (let poolType = 1; poolType <= 3; poolType++) {
-      // 找到基础池
-      const basePool = developmentStore.developmentPools.find(p => 
-        p.开发池名称 === poolname && p.开发池ID === poolType
-      )
-      
-      if (basePool) {
-        // 找到兼容池
-        const compatiblePools = developmentStore.developmentPools.filter(p => 
-          Math.abs(p.开发池ID) === poolType && 
-          p.舰ID && basePool.舰ID &&
-          basePool.舰ID.every(id => p.舰ID?.includes(id))
-        )
-        
-        // 合并所有兼容池的出货率
-        const allDropRates: Record<string, number> = {}
-        
-        for (const pool of compatiblePools) {
-          if (!pool.出货率) continue
-          
-          if (has九六式陸攻 || pool.开发池ID > 0) {
-            for (const [equipIdStr, rate] of Object.entries(pool.出货率)) {
-              if (allDropRates[equipIdStr] !== undefined) {
-                allDropRates[equipIdStr] += rate
-              } else {
-                allDropRates[equipIdStr] = rate
-              }
-            }
-          } else {
-            for (const equipIdStr of Object.keys(pool.出货率)) {
-              if (allDropRates[equipIdStr] === undefined) {
-                allDropRates[equipIdStr] = 0
-              }
-            }
-          }
-        }
-        
-        // 检查此池是否有所有已选装备的出货
-        const availableEquips = Object.keys(allDropRates)
-          .filter(idStr => allDropRates[idStr] > 0)
-          .map(Number)
-        
-        if (selectedEquips.every(id => availableEquips.includes(id)) && 
-            availableEquips.includes(equipId)) {
-          return true
-        }
-      }
-    }
-  }
-  
-  return false
+  // 更新数据
+  refreshCurrentPool()
+  refreshEnabled()
 }
 
 // 获取装备图标
@@ -1024,9 +499,6 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   const iconId = equip.types[3]
   return `${import.meta.env.BASE_URL}data/EquipIcon/${iconId}.png`
 }
-
-// 在script setup部分添加
-const equipRatesDetailMap = ref<Record<number, number[]>>({})
 </script>
 
 <style scoped>
