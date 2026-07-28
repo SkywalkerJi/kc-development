@@ -81,6 +81,24 @@ describe('mergeDropRateDetails', () => {
     expect(d.get(10)).toEqual([8, -2])
     expect(d.get(163)).toEqual([0, 6])
   })
+
+  // 两池场景无法区分「固定前置一个 0」与「按跳过的池数补 N 个 0」，
+  // 也无法区分「中间缺席的池补不补零」。参考实现是
+  //   if (!dict.ContainsKey(k)) { dict[k] = new ListInt(); if (num > 0) dict[k].AddInt(0); }
+  //   dict[k].AddInt(v);
+  // 即：只在首次登记时补一个 0（与 num 的具体值无关），中间缺席一律不补。
+  it('前置的 0 恒为一个，且中间缺席的池不补零', () => {
+    const a = pool('A', 1, [1], { '10': 8 })
+    const b = pool('B', 1, [1], { '20': 4 })
+    const c = pool('C', 1, [1], { '10': -3, '163': 6 })
+    const d = mergeDropRateDetails([a, b, c])
+    // 163 首次出现在第 3 个池，仍只前置一个 0 —— 不是两个
+    expect(d.get(163)).toEqual([0, 6])
+    // 10 在第 1、3 池出现，第 2 池缺席，中间不补零
+    expect(d.get(10)).toEqual([8, -3])
+    // 20 首次出现在第 2 池
+    expect(d.get(20)).toEqual([0, 4])
+  })
 })
 
 describe('poolAdmits / allEquipIds 的不对称', () => {
@@ -90,6 +108,13 @@ describe('poolAdmits / allEquipIds 的不对称', () => {
     expect(poolAdmits(rates, [10])).toBe(true)
     expect(poolAdmits(rates, [168])).toBe(false)
     expect(poolAdmits(rates, [])).toBe(true)
+  })
+
+  // 生产环境最常触达的拒绝路径：用户已选某装备，再切到不含该装备的池。
+  // 少了这条，实现里的 `?? 0` 兜底被删掉测试也照样全绿。
+  it('目标装备完全不在表里时不准入', () => {
+    expect(poolAdmits(rates, [999])).toBe(false)
+    expect(poolAdmits(rates, [10, 999])).toBe(false)
   })
 
   it('启用列表包含被归零的装备', () => {
