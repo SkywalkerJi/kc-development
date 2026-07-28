@@ -129,9 +129,12 @@ describe('sortResults', () => {
   })
 
   it('总资源差为 2 时不再视为相等，按总资源升序', () => {
-    // 差 1 才视为相等；这条锁住阈值本身，防止 > 1 被放宽成 > 2
-    const out = sortResults([mk('a', 5, 102, 10), mk('b', 5, 100, 20)])
-    expect(out.map((r) => r.池名)).toEqual(['b', 'a'])
+    // 锁住阈值本身：把 `> 1` 放宽成 `> 2` 时这条必须变红。
+    // 关键在于让两条 tiebreak 规则给出【相反】结论 ——
+    //   a 总资源更小（升序 → a 在前）、b 失败率更大（降序 → b 在前）。
+    // 若两条规则恰好同向，无论走哪条分支结果都一样，测试就抓不到阈值变化。
+    const out = sortResults([mk('b', 5, 102, 20), mk('a', 5, 100, 10)])
+    expect(out.map((r) => r.池名)).toEqual(['a', 'b'])
   })
 
   it('canonicalSortResults 对仅池ID不同的结果也给出确定顺序', () => {
