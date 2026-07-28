@@ -194,7 +194,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import type { Api_EquipInfo } from '@/types/equipTypes'
-import type { DevelopmentPool, DevelopResult } from '@/types/developTypes'
+import type { DevelopmentPoolData as DevelopmentPool, DevelopResult } from '@/core/types'
 
 // 获取 store
 const developmentStore = useDevelopmentStore()
