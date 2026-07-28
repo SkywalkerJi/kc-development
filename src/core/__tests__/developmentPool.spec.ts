@@ -55,4 +55,32 @@ describe('DevelopmentPoolClass.init', () => {
     p.init(ctypeMap, noopGetIDs, shipList)
     expect(p.toString()).toBe('X(BB,最低钢300)')
   })
+
+  // 以下三条覆盖上面用例的盲区：
+  // 舰名路径（99 个池里 38 个用它，是主路径）此前从未被触发，
+  // id >= 1500 的排除此前是空覆盖 —— 把那个判断整段删掉，原有断言照样通过。
+
+  it('舰名结果追加在舰种之后，且同样不去重', () => {
+    const p = createPools([
+      { 开发池名称: 'X', 开发池ID: 1, 舰种: ['BB'], 舰名: ['長門'], 出货率: {} },
+    ])[0]
+    p.init(ctypeMap, () => [1, 1], shipList)
+    // 舰种 BB 命中 [1,2]，舰名再追加 [1,1]
+    expect(p.舰ID).toEqual([1, 2, 1, 1])
+  })
+
+  it('舰名以 exact=false 调用 getIDs', () => {
+    const calls: Array<[string[], boolean]> = []
+    const p = createPools([{ 开发池名称: 'X', 开发池ID: 1, 舰名: ['長門'], 出货率: {} }])[0]
+    p.init(ctypeMap, (names, exact) => { calls.push([names, exact]); return [] }, shipList)
+    expect(calls).toEqual([[['長門'], false]])
+  })
+
+  it('id >= 1500 的舰即使筛选条件匹配也不进入舰ID', () => {
+    // 1500 的 stype 同为 9(BB)，只可能被 id < 1500 这个条件挡住
+    const withBoundary = { ...shipList, 1500: { name: '边界舰', stype: 9, ctype: 1 } }
+    const p = createPools([{ 开发池名称: 'X', 开发池ID: 1, 舰种: ['BB'], 出货率: {} }])[0]
+    p.init(ctypeMap, noopGetIDs, withBoundary)
+    expect(p.舰ID).toEqual([1, 2])
+  })
 })
