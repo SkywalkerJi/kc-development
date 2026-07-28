@@ -117,13 +117,25 @@ export function sortResults(results: DevelopResult[]): DevelopResult[] {
   })
 }
 
-/** 在原比较器之上追加确定性 tiebreak，仅用于测试比较，不用于展示。 */
+/**
+ * 供对拍比较用的规范全序。**仅用于测试，不要用于展示。**
+ *
+ * ⚠️ 它**不是** `sortResults` 的「加强版」，而是一个独立的、可能与之相反的排序：
+ * `sortResults` 把「总资源差 ≤ 1」视为相等后按失败率降序，本函数则精确比较总资源。
+ * 同一对结果两者可能给出**相反**顺序，这是有意的 ——
+ * 展示走 `sortResults`（忠实复刻），比较走本函数（确定可重复），两者不可混用。
+ *
+ * 每一级都必须能分出胜负、且相等时返回 0，否则对拍会退化成「跟随输入顺序」而随机失败。
+ */
 export function canonicalSortResults(results: DevelopResult[]): DevelopResult[] {
   return [...results].sort((a, b) => {
     if (a.出货率 !== b.出货率) return b.出货率 - a.出货率
     if (a.总资源 !== b.总资源) return a.总资源 - b.总资源
     if (a.失败率 !== b.失败率) return b.失败率 - a.失败率
     if (a.池名 !== b.池名) return a.池名 < b.池名 ? -1 : 1
-    return a.公式.join(',') < b.公式.join(',') ? -1 : 1
+    if (a.池ID !== b.池ID) return a.池ID - b.池ID
+    const fa = a.公式.join(',')
+    const fb = b.公式.join(',')
+    return fa === fb ? 0 : fa < fb ? -1 : 1
   })
 }

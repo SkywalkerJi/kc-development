@@ -16,6 +16,11 @@ describe('selectPoolType', () => {
   it('全相等 → 油钢池', () => expect(selectPoolType([10, 10, 10, 10])).toBe(3))
   it('铝与弹并列最大时落弹池（短路顺序）', () => expect(selectPoolType([10, 20, 10, 20])).toBe(2))
   it('铝并列不算严格最大', () => expect(selectPoolType([20, 10, 10, 20])).toBe(3))
+
+  // 上面 5 条只锁住了第一个判断（铝 vs 其余）的并列语义。
+  // 第二个判断里的两个「严格大于」同样不能放宽成 >=，各来一条反例：
+  it('弹与油并列时不落弹池', () => expect(selectPoolType([10, 10, 5, 5])).toBe(3))
+  it('弹与钢并列时不落弹池', () => expect(selectPoolType([5, 10, 10, 5])).toBe(3))
 })
 
 describe('deriveRecipes — 基础', () => {
@@ -121,5 +126,41 @@ describe('sortResults', () => {
     const b = mk('b', 5, 101, 10)
     expect(canonicalSortResults([a, b]).map((r) => r.池名)).toEqual(['a', 'b'])
     expect(canonicalSortResults([b, a]).map((r) => r.池名)).toEqual(['a', 'b'])
+  })
+
+  it('总资源差为 2 时不再视为相等，按总资源升序', () => {
+    // 差 1 才视为相等；这条锁住阈值本身，防止 > 1 被放宽成 > 2
+    const out = sortResults([mk('a', 5, 102, 10), mk('b', 5, 100, 20)])
+    expect(out.map((r) => r.池名)).toEqual(['b', 'a'])
+  })
+
+  it('canonicalSortResults 对仅池ID不同的结果也给出确定顺序', () => {
+    // 池ID 若不进 tiebreak 链，这两条的顺序就跟随输入 —— 对拍会随机失败
+    const a: DevelopResult = { ...mk('p', 5, 100, 10), 池ID: 3 }
+    const b: DevelopResult = { ...mk('p', 5, 100, 10), 池ID: 1 }
+    expect(canonicalSortResults([a, b]).map((r) => r.池ID)).toEqual([1, 3])
+    expect(canonicalSortResults([b, a]).map((r) => r.池ID)).toEqual([1, 3])
+  })
+
+  it('canonicalSortResults 与 sortResults 可能给出相反顺序（刻意如此）', () => {
+    const a = mk('a', 5, 100, 10)
+    const b = mk('b', 5, 101, 20)
+    // sortResults：总资源差 1 视为相等 → 按失败率降序 → b 在前
+    expect(sortResults([a, b]).map((r) => r.池名)).toEqual(['b', 'a'])
+    // canonicalSortResults：精确比较总资源 → a 在前
+    expect(canonicalSortResults([a, b]).map((r) => r.池名)).toEqual(['a', 'b'])
+  })
+})
+
+describe('equipList 缺项时的防御分支', () => {
+  it('deriveRecipes 跳过不在 equipList 的目标装备，不抛错', () => {
+    expect(deriveRecipes(1, [999999], equips)).toEqual([[10, 10, 10, 11]])
+  })
+
+  it('evaluateRecipe 跳过不在 equipList 的陪跑装备，不计入陪跑率', () => {
+    const rates = new Map([[10, 20], [888888, 30]])
+    const r = evaluateRecipe('P', 1, [30, 20, 10, 10], rates, [10], equips)
+    expect(r.出货率).toBe(20)
+    expect(r.失败率).toBe(80) // 888888 查不到，不计入陪跑 → 100-20-0
   })
 })
