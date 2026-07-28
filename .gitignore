@@ -34,3 +34,5 @@ node_modules
 .vscode/
 # SDD 执行期临时产物
 .superpowers/
+
+oracle/
