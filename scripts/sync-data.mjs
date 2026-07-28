@@ -88,7 +88,10 @@ console.log(`\n[装备] ${oldEquips.size} → ${newEquips.size}`)
 if (addedEquips.length)
   console.log(`  + ${addedEquips.map((e) => `${e} ${equipName.get(e) ?? '?'}`).join(', ')}`)
 
-writeFileSync(join(DEST, 'DevelopmentPool.json'), JSON.stringify(pools), 'utf8')
+// DevelopmentPool 是人会读、会逐行审的表 —— 缩进输出，让 git diff 可读。
+// ctype 与 start2 保持单行：前者是纯映射表，后者是 1.9MB 的游戏原始数据，
+// 缩进只会让体积翻倍而没人会去读它们的 diff。两者上游本来也是单行。
+writeFileSync(join(DEST, 'DevelopmentPool.json'), JSON.stringify(pools, null, 2), 'utf8')
 writeFileSync(join(DEST, 'ctype.json'), JSON.stringify(ctype), 'utf8')
 writeFileSync(join(DEST, 'start2.json'), JSON.stringify(start2), 'utf8')
 console.log('\n写入完成。')

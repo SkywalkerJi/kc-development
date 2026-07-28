@@ -25,4 +25,13 @@ describe('stripJsonComments', () => {
     const out = stripJsonComments('{\n/* x */\n}')
     expect(out.split('\n').length).toBe(3)
   })
+
+  it('代理对不会让替换位置漂移（emoji 与 U+20000 面汉字）', () => {
+    // 用 Array.from 按码点切分会与按码元计数的索引错位，产出长度变化的结果
+    for (const src of ['{"n": "\u{1F6A2}"} /* c */', '{"n": "\u{20000}abc"} /* c */']) {
+      const out = stripJsonComments(src)
+      expect(out.length).toBe(src.length)
+      expect(() => JSON.parse(out)).not.toThrow()
+    }
+  })
 })

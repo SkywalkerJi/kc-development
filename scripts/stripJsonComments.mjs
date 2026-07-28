@@ -3,7 +3,12 @@
  * 用状态机而非正则：字符串字面量内部的 `/*` `//` 必须原样保留。
  */
 export function stripJsonComments(text) {
-  const out = Array.from(text)
+  // 必须用 split('') 而不是 Array.from(text)：
+  // Array.from 按 Unicode 码点切分，会把一个代理对合成 1 个元素，
+  // 而下面的 i / k / stop / text.length 全部按 UTF-16 码元计数 ——
+  // 两个索引空间一旦错位，替换位置就会漂移，产出语法合法但内容被静默改写的 JSON。
+  // 实测 emoji（🚢）与 U+20000 面的汉字都会触发。
+  const out = text.split('')
   let inString = false
   let escaped = false
   let i = 0
