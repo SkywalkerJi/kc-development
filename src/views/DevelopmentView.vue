@@ -197,14 +197,10 @@ import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import FlagshipSearch from '@/components/FlagshipSearch.vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
-import type { DevelopResult, PoolType, Resources } from '@/core/types'
+import type { DevelopResult, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
-import {
-  findCompatiblePools, sortCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits,
-  EQUIP_96_LAND_ATTACKER,
-} from '@/core/poolMatching'
-import { selectPoolType, deriveRecipes, evaluateRecipe, sortResults } from '@/core/recipe'
+import { computePoolRates, computeRecipes } from '@/core/orchestration'
 import { formatRateDetail, sortEquipIds, groupEquipmentsWithVisibility } from '@/core/grouping'
 import { computeEnabledEquipIds } from '@/core/enabledSet'
 import { validateResourceValue, applyResourceChange } from '@/core/resourceValidation'
@@ -336,45 +332,18 @@ const equipmentGroups = computed(() => {
 function refreshCurrentPool() {
   if (!selectedPool.value) return
   const res = resources.value as unknown as Resources
-  const poolType = selectPoolType(res)
-  const compatible = sortCompatiblePools(
-    findCompatiblePools(
-      pools(), selectedPool.value as unknown as DevelopmentPoolClass, poolType, res,
-    ),
+  const { totals, details } = computePoolRates(
+    pools(), selectedPool.value as unknown as DevelopmentPoolClass, res,
   )
-
-  const details = mergeDropRateDetails(compatible)
-  const totals: Record<number, number> = {}
-  const detailMap: Record<number, number[]> = {}
-  for (const [id, list] of details) {
-    totals[id] = list.reduce((s, v) => s + v, 0)
-    detailMap[id] = list
-  }
   currentPoolEquipments.value = totals
-  equipRatesDetailMap.value = detailMap
+  equipRatesDetailMap.value = details
 }
 
 function refreshResults() {
   const targets = developmentStore.getSelectedEquipIds()
-  if (targets.length === 0) { developmentResults.value = []; return }
-
-  const out: DevelopResult[] = []
-  for (const name of developmentStore.existPool) {
-    for (let t = 1 as PoolType; t <= 3; t = (t + 1) as PoolType) {
-      const base = pools().find(
-        (p) => p.开发池名称 === name && p.开发池ID === t,
-      )
-      if (!base) continue
-
-      const compatible = findCompatiblePools(pools(), base, t)
-      const rates = mergeDropRates(compatible, targets.includes(EQUIP_96_LAND_ATTACKER))
-      if (!poolAdmits(rates, targets)) continue
-
-      for (const recipe of deriveRecipes(t, targets, start2Store.equipList))
-        out.push(evaluateRecipe(name, t, recipe, rates, targets, start2Store.equipList))
-    }
-  }
-  developmentResults.value = sortResults(out)
+  developmentResults.value = computeRecipes(
+    pools(), developmentStore.existPool, targets, start2Store.equipList,
+  )
 }
 
 function refreshEnabled() {

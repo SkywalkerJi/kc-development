@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadFixtures } from './helpers/loadFixtures'
-import {
-  findCompatiblePools, sortCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits,
-} from '@/core/poolMatching'
-import { selectPoolType, deriveRecipes, evaluateRecipe, canonicalSortResults } from '@/core/recipe'
+import { computePoolRates, computeRecipes } from '@/core/orchestration'
+import { selectPoolType, canonicalSortResults } from '@/core/recipe'
 import type { DevelopResult, PoolType, Resources } from '@/core/types'
 
 interface Vectors {
@@ -22,20 +20,12 @@ const vectors: Vectors = JSON.parse(
 )
 const fx = loadFixtures()
 
+// 反推侧对拍现在直接调用生产入口 computeRecipes（DevelopmentView.vue 的
+// refreshResults 用的是同一个函数）——不再在测试里重新编排一遍算法。
+// canonicalSortResults 只用来把两侧都归一化到确定全序以便逐条比较，
+// 不影响 computeRecipes 内部已经产出的（sortResults）展示顺序。
 function derive(targets: number[]): DevelopResult[] {
-  const out: DevelopResult[] = []
-  for (const name of fx.existPool) {
-    for (let t = 1 as PoolType; t <= 3; t = (t + 1) as PoolType) {
-      const base = fx.pools.find((p) => p.开发池名称 === name && p.开发池ID === t)
-      if (!base) continue
-      const compatible = findCompatiblePools(fx.pools, base, t)
-      const rates = mergeDropRates(compatible, targets.includes(168))
-      if (!poolAdmits(rates, targets)) continue
-      for (const r of deriveRecipes(t, targets, fx.equipList))
-        out.push(evaluateRecipe(name, t, r, rates, targets, fx.equipList))
-    }
-  }
-  return canonicalSortResults(out)
+  return canonicalSortResults(computeRecipes(fx.pools, fx.existPool, targets, fx.equipList))
 }
 
 describe('对拍：配方反推', () => {
@@ -65,22 +55,21 @@ describe('对拍：正向出货率', () => {
     '第 %i 组 pool=%j',
     (_i, v) => {
       const res = v.resources as unknown as Resources
+      // selectPoolType 是 computePoolRates 内部用来选池类型的同一个叶函数，
+      // 这里单独断言一次，确认向量记录的 poolType 与它的产出一致。
       expect(selectPoolType(res)).toBe(v.poolType)
 
       const base = fx.pools.find((p) => p.开发池名称 === v.pool && p.开发池ID >= 0)
       expect(base).toBeDefined()
 
-      const compatible = sortCompatiblePools(
-        findCompatiblePools(fx.pools, base!, v.poolType as PoolType, res),
-      )
-
-      const mine: Record<string, number[]> = {}
-      for (const [id, list] of mergeDropRateDetails(compatible)) mine[String(id)] = list
+      // 正向侧对拍现在直接调用生产入口 computePoolRates（DevelopmentView.vue 的
+      // refreshCurrentPool 用的是同一个函数）——不再在测试里重新编排一遍算法。
+      const { details: mine } = computePoolRates(fx.pools, base!, res)
 
       const sortKeys = (o: Record<string, number[]>) =>
         Object.keys(o).map(Number).sort((a, b) => a - b).map(String)
       expect(sortKeys(mine)).toEqual(sortKeys(v.rates))
-      for (const k of sortKeys(mine)) expect(mine[k]).toEqual(v.rates[k])
+      for (const k of sortKeys(mine)) expect(mine[Number(k)]).toEqual(v.rates[k])
     },
   )
 })
