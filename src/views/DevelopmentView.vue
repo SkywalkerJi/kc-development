@@ -53,11 +53,11 @@
             </thead>
             <tbody>
               <!-- 目标装备组 -->
-              <template v-if="targetEquipments.length > 0">
+              <template v-if="groupedEquipments.showTarget">
                 <tr class="group-header">
                   <td></td>
                   <td>目标装备</td>
-                  <td>{{ calculateTotalRate(targetEquipments) }}%</td>
+                  <td>{{ groupedEquipments.targetTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in targetEquipments" :key="equip.id" class="target-equipment">
@@ -69,11 +69,11 @@
               </template>
               
               <!-- 其他可出货装备 -->
-              <template v-if="otherEquipments.length > 0">
+              <template v-if="groupedEquipments.showOther">
                 <tr class="group-header">
                   <td></td>
                   <td>其它装备</td>
-                  <td>{{ calculateTotalRate(otherEquipments) }}%</td>
+                  <td>{{ groupedEquipments.otherTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in otherEquipments" :key="equip.id">
@@ -85,11 +85,11 @@
               </template>
               
               <!-- 资源不足装备 -->
-              <template v-if="insufficientEquipments.length > 0">
+              <template v-if="groupedEquipments.showInsufficient">
                 <tr class="group-header">
                   <td></td>
                   <td>资源不足导致失败</td>
-                  <td>{{ calculateTotalRate(insufficientEquipments) }}%</td>
+                  <td>{{ groupedEquipments.insufficientTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in insufficientEquipments" :key="equip.id" class="insufficient-equipment">
@@ -101,7 +101,7 @@
               </template>
               
               <!-- 全部被替换装备 -->
-              <template v-if="replacedEquipments.length > 0">
+              <template v-if="groupedEquipments.showReplaced">
                 <tr class="group-header">
                   <td></td>
                   <td>全部被替换</td>
@@ -205,8 +205,9 @@ import {
   EQUIP_96_LAND_ATTACKER,
 } from '@/core/poolMatching'
 import { selectPoolType, deriveRecipes, evaluateRecipe, sortResults } from '@/core/recipe'
-import { classifyEquip, formatRateDetail, isAffordable, sortEquipIds } from '@/core/grouping'
+import { formatRateDetail, sortEquipIds, groupEquipmentsWithVisibility } from '@/core/grouping'
 import { computeEnabledEquipIds } from '@/core/enabledSet'
+import { validateResourceValue, applyResourceChange } from '@/core/resourceValidation'
 
 // 获取 store
 const developmentStore = useDevelopmentStore()
@@ -221,6 +222,8 @@ const pools = () => developmentStore.developmentPools as unknown as DevelopmentP
 // 状态数据
 const selectedPool = ref<DevelopmentPoolClass | null>(null)
 const resources = ref<number[]>([10, 10, 10, 10])
+// 上一个通过整数校验的资源值，供小数/空值输入回退时使用。
+const lastValid = ref<number[]>([10, 10, 10, 10])
 const currentPoolEquipments = ref<Record<number, number>>({})
 const equipRatesDetailMap = ref<Record<number, number[]>>({})
 const developmentResults = ref<DevelopResult[]>([])
@@ -265,24 +268,15 @@ function onFlagshipSelect(payload: { pool: DevelopmentPoolClass; shipName: strin
 const hasSelectedEquipments = computed(() => {
   return developmentStore.getSelectedEquipIds().length > 0
 })
+// 分组 + 各组是否应显示，一并在这里算好，模板只读现成值（不重复遍历/重复求和）。
 const groupedEquipments = computed(() => {
-  const groups = { replaced: [] as Api_EquipInfo[], insufficient: [] as Api_EquipInfo[],
-                   target: [] as Api_EquipInfo[], other: [] as Api_EquipInfo[] }
   const targets = new Set(developmentStore.getSelectedEquipIds())
   const ids = sortEquipIds(
     Object.keys(currentPoolEquipments.value).map(Number), start2Store.equipList,
   )
-  for (const id of ids) {
-    const equip = start2Store.equipList[id]
-    if (!equip) continue
-    const g = classifyEquip(
-      currentPoolEquipments.value[id],
-      isAffordable(resources.value, equip.broken),
-      targets.has(id),
-    )
-    groups[g].push(equip)
-  }
-  return groups
+  return groupEquipmentsWithVisibility<Api_EquipInfo>(
+    ids, start2Store.equipList, currentPoolEquipments.value, resources.value, targets,
+  )
 })
 
 const targetEquipments = computed(() => groupedEquipments.value.target)
@@ -411,8 +405,18 @@ onMounted(async () => {
   refreshResults()
 })
 
-// 监听资源变化，更新结果
+// 监听资源变化，更新结果。
+// v-model.number 每次按键都会把当前输入（哪怕是小数）直接写进 resources，
+// 早于 @blur 触发的整数校验；这里先做一遍整数判断——有非整数项就整体回退且
+// 本轮不重算（回退会再触发一次本 watcher，用纠正后的整数值重算），
+// 避免小数在被纠正前先用错误值算出一次结果。
 watch(resources, () => {
+  const result = applyResourceChange(resources.value, lastValid.value)
+  lastValid.value = result.lastValid
+  if (result.revertedResources) {
+    resources.value = result.revertedResources
+    return
+  }
   refreshCurrentPool()
   refreshResults()
   refreshEnabled()
@@ -425,17 +429,11 @@ function onPoolChanged() {
   refreshEnabled()
 }
 
-// 验证资源输入
+// 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）
 function validateResource(index: number) {
-  if (isNaN(resources.value[index])) {
-    resources.value[index] = 10
-  }
-  
-  if (resources.value[index] < 10) {
-    resources.value[index] = 10
-  } else if (resources.value[index] > 300) {
-    resources.value[index] = 300
-  }
+  const validated = validateResourceValue(resources.value[index], lastValid.value[index])
+  resources.value[index] = validated
+  lastValid.value[index] = validated
 }
 
 // 标准化资源输入（失焦时）
@@ -461,16 +459,13 @@ function toggleEquipment(equipId: number) {
   refreshEnabled()
   refreshResults()
 
-  // 如果有可用公式，自动应用第一个
+  // ⚠️ 刻意偏离参考实现：参考实现在按钮 Click 末尾只重算列表，
+  // 改资源只发生在用户主动点击结果行时（listView2_SelectedIndexChanged）。
+  // 这里自动应用第一条公式是本项目有意保留的交互改进，经决策确认，非移植遗漏。
+  // 代价：会覆盖用户手动输入的资源值。
   if (developmentResults.value.length > 0) {
     selectResult(developmentResults.value[0])
   }
-}
-
-// 计算装备组总出货率
-function calculateTotalRate(equipments: Api_EquipInfo[]): number {
-  return equipments.reduce((sum, equip) =>
-    sum + (currentPoolEquipments.value[equip.id] || 0), 0)
 }
 
 function getEquipRate(equipId: number): string {

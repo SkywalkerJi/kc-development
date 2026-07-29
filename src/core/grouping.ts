@@ -47,3 +47,59 @@ export function isAffordable(resources: readonly number[], broken: number[]): bo
   for (let i = 0; i < 4; i++) if (resources[i] < broken[i] * 10) return false
   return true
 }
+
+/** 一组装备 id 的出货率之和；id 不在 rateMap 中按 0 处理。 */
+export function sumGroupRate(ids: number[], rateMap: Record<number, number>): number {
+  return ids.reduce((sum, id) => sum + (rateMap[id] ?? 0), 0)
+}
+
+/** 分组结果，附带各组是否应显示（供模板直接读取，避免重复遍历/重复求和）。 */
+export interface GroupedEquipments<T> {
+  target: T[]
+  other: T[]
+  insufficient: T[]
+  replaced: T[]
+  targetTotal: number
+  otherTotal: number
+  insufficientTotal: number
+  showTarget: boolean
+  showOther: boolean
+  showInsufficient: boolean
+  showReplaced: boolean
+}
+
+/**
+ * 对装备分组，并按参考实现的显示规则算出四组是否应显示：
+ * 前三组（目标/其它/资源不足）按「组总出货率 > 0」判定；
+ * 「全部被替换」组按数量判定，不能和前三组统一成总率——
+ * 该组每个成员的 total 都恒为 0（见 classifyEquip），组总率恒为 0，
+ * 用总率判断会让这一组永远不显示，这与参考实现的 list5.Count > 0 不符。
+ */
+export function groupEquipmentsWithVisibility<T extends { id: number; broken: number[] }>(
+  ids: number[],
+  equipList: Record<number, T>,
+  rateMap: Record<number, number>,
+  resources: readonly number[],
+  targetIds: ReadonlySet<number>,
+): GroupedEquipments<T> {
+  const groups = { replaced: [] as T[], insufficient: [] as T[], target: [] as T[], other: [] as T[] }
+  for (const id of ids) {
+    const equip = equipList[id]
+    if (!equip) continue
+    const g = classifyEquip(rateMap[id] ?? 0, isAffordable(resources, equip.broken), targetIds.has(id))
+    groups[g].push(equip)
+  }
+
+  const targetTotal = sumGroupRate(groups.target.map((e) => e.id), rateMap)
+  const otherTotal = sumGroupRate(groups.other.map((e) => e.id), rateMap)
+  const insufficientTotal = sumGroupRate(groups.insufficient.map((e) => e.id), rateMap)
+
+  return {
+    ...groups,
+    targetTotal, otherTotal, insufficientTotal,
+    showTarget: targetTotal > 0,
+    showOther: otherTotal > 0,
+    showInsufficient: insufficientTotal > 0,
+    showReplaced: groups.replaced.length > 0,
+  }
+}
