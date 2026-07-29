@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
-import { createPools } from '@/core/developmentPool'
+import { createPools, DevelopmentPoolClass } from '@/core/developmentPool'
 
 describe('developmentStore 公开接口', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -211,6 +211,91 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
     const r2 = await store.initializeData()
     expect(r2.success).toBe(true)
     expect(poolCalls).toBe(2)
+  })
+})
+
+// G4：readDevelopmentPools 之前是先把 createPools() 出来、还没 init() 的池
+// 数组整体发布到 developmentPools.value，再在循环里逐个 init()——如果处理到
+// 中间某个池时 init() 抛错，developmentPools.value 已经是"一部分池 init 完、
+// 一部分没 init"的半成品，且这个半成品状态不会因为本次调用最终返回
+// success:false 而回滚，会一直留在 store 里。
+describe('G4: readDevelopmentPools 原子发布，不在中途失败时留下部分状态', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('第一个池 init 成功、第二个池 init 抛错：developmentPools 与 existPool 都必须保持调用前的状态，不能是半成品', async () => {
+    const start2 = useStart2Store()
+    vi.spyOn(start2, 'initializeData').mockResolvedValue({ success: true, error: null })
+    start2.isReady = true
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('ctype')) return { json: async () => ({}) }
+        if (url.includes('DevelopmentPool'))
+          return {
+            json: async () => [
+              { 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: {} },
+              { 开发池名称: 'B', 开发池ID: 1, 舰ID: [], 出货率: {} },
+            ],
+          }
+        return { json: async () => ({}) }
+      }),
+    )
+
+    const store = useDevelopmentStore()
+    // 调用前的引用，用来确认调用失败后没有被替换成任何中间状态。
+    const poolsBefore = store.developmentPools
+    const existPoolBefore = store.existPool
+    expect(poolsBefore).toEqual([])
+    expect(existPoolBefore).toEqual([])
+
+    let initCalls = 0
+    vi.spyOn(DevelopmentPoolClass.prototype, 'init').mockImplementation(() => {
+      initCalls++
+      if (initCalls === 2) throw new Error('模拟第二个池 init 失败')
+    })
+
+    const result = await store.initializeData()
+
+    expect(result.success).toBe(false)
+    expect(initCalls).toBe(2) // 确认第一个池确实先成功处理过，第二个才失败——这是"部分成功"场景
+    // 关键断言：即便第一个池已经 init 成功，只要第二个抛错，developmentPools/
+    // existPool 都必须还是调用前的那个引用——不允许出现"第一个池已生效、
+    // 第二个没生效"的半成品状态被发布出去。
+    expect(store.developmentPools).toBe(poolsBefore)
+    expect(store.existPool).toBe(existPoolBefore)
+  })
+
+  it('两个池的 init 全部成功：developmentPools 与 existPool 才会被替换成新内容', async () => {
+    const start2 = useStart2Store()
+    vi.spyOn(start2, 'initializeData').mockResolvedValue({ success: true, error: null })
+    start2.isReady = true
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('ctype')) return { json: async () => ({}) }
+        if (url.includes('DevelopmentPool'))
+          return {
+            json: async () => [
+              { 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: {} },
+              { 开发池名称: 'B', 开发池ID: 1, 舰ID: [], 出货率: {} },
+            ],
+          }
+        return { json: async () => ({}) }
+      }),
+    )
+
+    const store = useDevelopmentStore()
+    const result = await store.initializeData()
+
+    expect(result.success).toBe(true)
+    expect(store.developmentPools.map((p) => p.开发池名称)).toEqual(['A', 'B'])
+    expect(store.existPool).toEqual(['A', 'B'])
   })
 })
 

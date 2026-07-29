@@ -30,15 +30,28 @@ export const useDevelopmentStore = defineStore('development', () => {
     const res = await fetch(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
     const raw: DevelopmentPoolData[] = await res.json()
 
-    developmentPools.value = createPools(raw)
-    existPool.value = []
+    // 先在局部变量里把所有池跑完 init()，全部成功后才一次性发布到
+    // developmentPools/existPool 这两个响应式状态。不能像之前那样先把
+    // developmentPools.value 赋成刚 createPools() 出来、还没 init() 的池数组
+    // 再在循环里逐个 init()——如果某一个 pool.init() 抛错（比如 shipList 里
+    // 某条记录字段缺失），developmentPools.value 已经被替换成了"一部分池
+    // init 完、一部分还没 init"的半成品状态，且这个状态不会随本次调用失败
+    // 而回滚，会一直留在 store 里，后续任何读它的地方都可能读到不一致的池。
+    // 局部变量在这里只是普通对象，函数中途抛错时局部变量直接被丢弃，
+    // developmentPools.value 依然是上一次成功时的值（或初始的空数组），
+    // 不会被污染。
+    const pools = createPools(raw)
+    const nextExistPool: string[] = []
 
-    for (const pool of developmentPools.value) {
+    for (const pool of pools) {
       pool.init(ctypeMap.value, start2Store.getIDs, start2Store.shipList)
       // 下拉框准入三条件：名称未重复、非负 ID、无最低资源门槛
-      if (!existPool.value.includes(pool.开发池名称) && pool.开发池ID >= 0 && !pool.最低资源)
-        existPool.value.push(pool.开发池名称)
+      if (!nextExistPool.includes(pool.开发池名称) && pool.开发池ID >= 0 && !pool.最低资源)
+        nextExistPool.push(pool.开发池名称)
     }
+
+    developmentPools.value = pools
+    existPool.value = nextExistPool
   }
 
   function initFilterButtonList() {

@@ -1,9 +1,18 @@
 <template>
   <div class="development-view">
     <h2>装备开发</h2>
-    
+
+    <!--
+      initializeData() 失败时不渲染主内容——它依赖 developmentPools/
+      filterButtonList 等数据，失败时这些要么是空的、要么是上一次成功时
+      的旧数据，继续渲染只会展示一个看起来能用、实际上不可信的界面。
+    -->
+    <div v-if="initFailed" class="init-error">
+      装备开发数据加载失败，请刷新页面重试。
+    </div>
+
     <!-- 主要内容区域 -->
-    <div class="main-content">
+    <div v-else class="main-content">
       <div class="left-panel">
         <!-- 秘书舰类型选择 -->
         <div class="secretary-select">
@@ -252,6 +261,9 @@ const lastValid = ref<number[]>([10, 10, 10, 10])
 const currentPoolEquipments = ref<Record<number, number>>({})
 const equipRatesDetailMap = ref<Record<number, number[]>>({})
 const developmentResults = ref<DevelopResult[]>([])
+// initializeData() 返回 { success: false } 时置位，模板据此不渲染依赖数据的
+// 主内容（见上面模板里的 v-if="initFailed"）。
+const initFailed = ref(false)
 
 const availablePools = computed(() => {
   // 使用Map对相同开发池名称进行去重
@@ -390,8 +402,15 @@ function refreshEnabled() {
 
 // 初始化数据
 onMounted(async () => {
-  // 初始化开发数据
-  await developmentStore.initializeData()
+  // 初始化开发数据。之前这里不检查返回值，success:false 时照样往下走，
+  // 用一份空的/上一次成功时的旧 developmentPools 渲染出一个看起来正常、
+  // 实际上数据不可信的界面。现在失败时置位 initFailed，模板据此改成
+  // 显示错误状态，不再继续渲染主内容。
+  const result = await developmentStore.initializeData()
+  if (!result.success) {
+    initFailed.value = true
+    return
+  }
 
   // 设置初始选择的池
   if (availablePools.value.length > 0) {
@@ -559,6 +578,13 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 
 .flagship-status.warning {
   color: red;
+}
+
+.init-error {
+  padding: 1rem;
+  background-color: #ffebeb;
+  border-radius: 4px;
+  color: #d9534f;
 }
 
 .main-content {
