@@ -14,7 +14,15 @@ export const useStart2Store = defineStore('start2', () => {
   const api_mst_stype = ref<Api_Mst_Stype[]>([])
   const api_mst_equip_ship = ref<Api_Mst_Equip_Ship[]>([])
   const api_mst_equip_exslot_ship = ref<Record<number, Api_Mst_Equip_Exslot_Ship>>({})
-  
+
+  // 就绪标志：只在 readStart2() 完整跑完（含下面的非空校验）后置为 true；
+  // 任何抛错路径都不会走到置位那一行。不能用「shipList 非空」代替它——
+  // readStart2 是边解析边把舰船写进 shipList 的（见下面的 for 循环），
+  // 如果解析到一半（比如舰船已经写完、装备数据格式不对）抛错，shipList
+  // 早就非空了，但这次加载并未成功。真正表达「这次加载是否成功」的只有
+  // 这个标志本身，不能从其他状态反推。
+  const isReady = ref(false)
+
   // 制空相关数据
   const 制空飞机 = [6, 7, 8, 11, 45, 47, 48, 56, 57, 58]
   const 陆航制空飞机 = [10]
@@ -22,15 +30,21 @@ export const useStart2Store = defineStore('start2', () => {
   
   // 读取start2.json数据
   const readStart2 = async () => {
+    // 立即置为未就绪：哪怕上一次曾经成功过，只要重新进入这个函数，
+    // 旧数据就要被下面这行清空重建（見下方 shipList.value = {}）。
+    // isReady 必须跟着失效，不能继续显示上一次成功时留下的 true——
+    // 否则一次失败的重试会在「旧数据已被清空、新数据尚未就绪」的窗口期，
+    // 让调用方误以为仍是就绪状态。
+    isReady.value = false
     try {
       // 使用基础路径获取start2.json
       const response = await fetch(`${import.meta.env.BASE_URL}data/start2.json`)
       const json = await response.json()
-      
+
       // 清空现有数据
       shipList.value = {}
       equipList.value = {}
-      
+
       // 处理舰船数据
       for (const item of json.api_mst_ship) {
         const id = item.api_id
@@ -54,10 +68,29 @@ export const useStart2Store = defineStore('start2', () => {
         
         shipList.value[id] = ship
       }
-      
+
+      // 解析"成功"（没有抛异常）不代表数据可用：api_mst_ship 字段存在但是
+      // 空数组时，上面的 for 循环一次都不会迭代，也不会抛错，shipList 会
+      // 悄悄停留在空表状态。这种情况必须视为失败，而不是带着一份空表继续走完
+      // 整个函数、最终把 isReady 置成 true——那样开发池会在空 shipList 上
+      // "成功"展开成什么都匹配不到的状态，且这个坏结果会被 initializeData
+      // 的进行中缓存永久保留，刷新前都无法重试。
+      if (Object.keys(shipList.value).length === 0) {
+        throw new Error('start2.json 解析结果不含任何舰船数据（api_mst_ship 为空），判定为加载失败')
+      }
+
       // 获取同型舰船列表
       getSameShipList()
-      
+
+      // shipList 非空不代表 allSameShipList 也非空——getSameShipList 只处理
+      // id < 1500 的玩家舰船（见其实现），如果 shipList 里全是敌方舰船
+      // （id >= 1500），allSameShipList 会是空表。开发池按舰名（舰名）反查
+      // 同型舰要靠 allSameShipList（见 getIDs 的非精确匹配分支），空表会让
+      // 这条路径静默失效而不报错，所以这里也要求它非空才算成功。
+      if (Object.keys(allSameShipList.value).length === 0) {
+        throw new Error('start2.json 解析结果不含任何玩家舰船（同型舰分类为空），判定为加载失败')
+      }
+
       // 处理装备数据
       for (const item of json.api_mst_slotitem) {
         const id = item.api_id
@@ -90,7 +123,14 @@ export const useStart2Store = defineStore('start2', () => {
         
         equipList.value[id] = equip
       }
-      
+
+      // 同上：api_mst_slotitem 存在但为空数组时，装备表会悄悄停留在空表状态、
+      // 不抛错。开发算法（出货率/配方）完全依赖装备表，空表下"成功"毫无意义，
+      // 必须视为失败。
+      if (Object.keys(equipList.value).length === 0) {
+        throw new Error('start2.json 解析结果不含任何装备数据（api_mst_slotitem 为空），判定为加载失败')
+      }
+
       // 处理其他数据
       api_mst_stype.value = json.api_mst_stype
       api_mst_equip_ship.value = json.api_mst_equip_ship
@@ -152,6 +192,12 @@ export const useStart2Store = defineStore('start2', () => {
           }
         }
       }
+
+      // 必须是整个函数体里最后落地的一行：只有到这里都没有抛错、也没有在
+      // 上面任何一处提前 return（本函数目前没有提前 return，但这条注释是给
+      // 以后改这个函数的人看的——新增的提前返回分支必须在这行之前，不能
+      // 绕过它），才代表这次加载真正完整成功。
+      isReady.value = true
     } catch (error) {
       console.error('读取start2数据失败:', error)
       // 必须重抛：这是关键数据，解析失败（如接口返回结构变化、空对象等）不能
@@ -634,6 +680,7 @@ export const useStart2Store = defineStore('start2', () => {
     equipList,
     sameShipList,
     allSameShipList,
+    isReady,
     api_mst_stype,
     api_mst_equip_ship,
     api_mst_equip_exslot_ship,

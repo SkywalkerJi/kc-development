@@ -43,6 +43,10 @@ describe('developmentStore 公开接口', () => {
 // 把竞态守卫改成 `if (false)`、把取最窄池的 `>=` 改成 `<=`，它们都照样全绿。
 // 这两处恰恰是本任务要修的核心缺陷，必须有能变红的断言。
 
+// G2：就绪判断不能靠"非空推断"。start2Store 是边解析边把舰船写进 shipList 的，
+// 解析到一半失败时 shipList 可能已经非空，但这次加载并未成功——用"非空"当
+// "已就绪"会把这种残留状态误判成功、跳过重试。守卫必须读 start2Store 显式
+// 维护的 isReady 标志。
 describe('initializeData 的数据加载竞态守卫', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -56,7 +60,7 @@ describe('initializeData 的数据加载竞态守卫', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('shipList 为空时先初始化 start2', async () => {
+  it('isReady 为 false 时先初始化 start2', async () => {
     const start2 = useStart2Store()
     const spy = vi
       .spyOn(start2, 'initializeData')
@@ -65,12 +69,26 @@ describe('initializeData 的数据加载竞态守卫', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  it('shipList 已就绪时跳过，不重复加载', async () => {
+  it('isReady 为 true 时跳过，不重复加载', async () => {
     const start2 = useStart2Store()
-    start2.shipList[1] = { id: 1, name: 'A', stype: 9, ctype: 1 } as never
+    start2.isReady = true
     const spy = vi.spyOn(start2, 'initializeData')
     await useDevelopmentStore().initializeData()
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  // 这条锁的正是 G2 描述的错误假设本身：shipList 非空 ≠ 已就绪。把守卫改回
+  // `Object.keys(start2Store.shipList).length === 0` 会让这条变红——非空的
+  // shipList 会被当成"已就绪"，spy 不会被调用，下面的断言就会失败。
+  it('shipList 非空但 isReady 为 false（模拟部分解析失败残留的状态）时，仍会重新加载，不能靠"非空"误判为已就绪', async () => {
+    const start2 = useStart2Store()
+    start2.shipList[1] = { id: 1, name: 'A', stype: 9, ctype: 1 } as never
+    expect(start2.isReady).toBe(false)
+    const spy = vi
+      .spyOn(start2, 'initializeData')
+      .mockResolvedValue({ success: true, error: null })
+    await useDevelopmentStore().initializeData()
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -83,12 +83,18 @@ export const useDevelopmentStore = defineStore('development', () => {
   // 内部实现：外部一律经 initializeData 的进行中缓存调用（同 start2Store 的模式）。
   async function _initializeData() {
     // 必须先确保 start2 就绪：pool.init() 要用 shipList 把筛选条件展开成 舰ID，
-    // 拿到空表就会展不开，导致后续所有出货率计算失效。这里的判空只是一层快路径
-    // （已就绪时省一次函数调用），真正防止重复拉取/重复重建 filterButtonList 的
-    // 是下面 initializeData 自身的进行中缓存——这个判空单独存在时管不住，因为
-    // 它只覆盖 start2Store.initializeData() 这一次调用，本函数自己接下来的
-    // readCtypeData / readDevelopmentPools / initFilterButtonList 完全不受它保护。
-    if (Object.keys(start2Store.shipList).length === 0) {
+    // 拿到空表就会展不开，导致后续所有出货率计算失效。这里读的是 start2Store
+    // 显式维护的 isReady 标志，不能用「shipList 非空」去推断——start2Store 是
+    // 边解析边把舰船写进 shipList 的，解析到一半失败（比如舰船已经写完、装备
+    // 数据格式不对）时 shipList 早就非空了，但那次加载并未成功；用非空当"已就绪"
+    // 会让这次失败被当成已就绪跳过，永远不会重试。
+    //
+    // 这里的判断只是一层快路径（已就绪时省一次函数调用），真正防止重复拉取/
+    // 重复重建 filterButtonList 的是下面 initializeData 自身的进行中缓存——
+    // 这个判断单独存在时管不住，因为它只覆盖 start2Store.initializeData()
+    // 这一次调用，本函数自己接下来的 readCtypeData / readDevelopmentPools /
+    // initFilterButtonList 完全不受它保护。
+    if (!start2Store.isReady) {
       await start2Store.initializeData()
     }
     await readCtypeData()
