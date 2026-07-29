@@ -302,7 +302,7 @@ const equipmentGroups = computed(() => {
   // 获取所有装备ID并排序
   const allEquipIds = Object.keys(developmentStore.filterButtonList).map(Number)
   
-  // 按照原C#程序的排序方式进行排序
+  // 按参考实现的排序方式：types[2] → types[3] → id
   allEquipIds.sort((a, b) => {
     const equipA = start2Store.equipList[a]
     const equipB = start2Store.equipList[b]

@@ -120,7 +120,7 @@ export class ShipInfo implements Api_ShipInfo {
   旗舰夜战攻击发动率?: number;
   僚舰夜战攻击发动率?: number;
   
-  // 根据C#实现的方法
+  // 与参考实现保持一致
   GetFullName(): string {
     return `${this.name}${this.yomi}(${this.id})`;
   }

@@ -8,8 +8,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DEST = join(ROOT, 'public', 'data')
 const FILES = ['DevelopmentPool.json', 'ctype.json', 'start2.json']
 
+// --from 必填，且刻意不给默认值：
+// 任何写死的默认路径都会把某台机器上的目录布局固化进仓库。
 const fromArg = process.argv.indexOf('--from')
-const SRC = fromArg !== -1 ? process.argv[fromArg + 1] : '/data/incoming/Kanxy/Files'
+const SRC = fromArg !== -1 ? process.argv[fromArg + 1] : undefined
+if (!SRC) {
+  console.error('用法：pnpm sync-data --from <数据源目录>')
+  console.error('  该目录需包含 DevelopmentPool.json、ctype.json、start2.json')
+  process.exit(1)
+}
 
 function load(path) {
   const raw = readFileSync(path, 'utf8').replace(/^\uFEFF/, '')

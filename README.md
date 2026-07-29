@@ -7,9 +7,10 @@
 装备开发的出货率表与游戏基础数据存放在 `public/data/`，通过同步脚本更新：
 
 ```sh
-pnpm sync-data                      # 从默认源目录同步
-pnpm sync-data --from /path/to/dir  # 指定源目录
+pnpm sync-data --from /path/to/dir
 ```
+
+`--from` 指向的目录需包含 `DevelopmentPool.json`、`ctype.json`、`start2.json`。
 
 脚本会剥离源文件中的注释、校验数据完整性，并打印本次变更摘要。
 

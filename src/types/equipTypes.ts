@@ -43,7 +43,7 @@ export class EquipInfo implements Api_EquipInfo {
   types: number[] = [];
   broken: number[] = [];
   
-  // 根据C#实现获取射程文字表示
+  // 射程的文字表示，与参考实现一致
   getRange(): string {
     let result = '';
     switch (this.射程) {
@@ -70,7 +70,7 @@ export class EquipInfo implements Api_EquipInfo {
   }
 }
 
-// 装备类型枚举，对应C#中的装备T3
+// 装备类型枚举，对应参考实现的装备 T3 分类
 export enum EquipmentType3 {
   小主 = 1,
   中主 = 2,
