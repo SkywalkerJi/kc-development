@@ -14,7 +14,9 @@
             </option>
           </select>
         </div>
-        
+
+        <FlagshipSearch :matched="flagshipMatched" @select="onFlagshipSelect" />
+
         <!-- 资源输入区域 -->
         <div class="resource-inputs">
           <div class="resource-group">
@@ -193,6 +195,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
+import FlagshipSearch from '@/components/FlagshipSearch.vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, PoolType, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
@@ -239,11 +242,23 @@ const availablePools = computed(() => {
 
   return Array.from(poolMap.values())
 })
-const flagshipInfo = ref<{ pool: DevelopmentPoolClass, shipInfo: any } | null>(null)
-const isCurrentFlagshipSelected = computed(() =>
-  flagshipInfo.value && selectedPool.value &&
-  flagshipInfo.value.pool.开发池名称 === selectedPool.value.开发池名称
+const flagshipPoolName = ref<string | null>(null)
+const flagshipMatched = computed(
+  () => !flagshipPoolName.value || flagshipPoolName.value === selectedPool.value?.开发池名称,
 )
+
+function onFlagshipSelect(payload: { pool: DevelopmentPoolClass; shipName: string }) {
+  flagshipPoolName.value = payload.pool.开发池名称
+  const target = developmentStore.developmentPools.find(
+    (p) => p.开发池名称 === payload.pool.开发池名称 && p.开发池ID >= 0 && !p.最低资源,
+  )
+  if (target) {
+    selectedPool.value = target
+    refreshCurrentPool()
+    refreshResults()
+    refreshEnabled()
+  }
+}
 
 // 判断是否有选中的装备
 const hasSelectedEquipments = computed(() => {
@@ -393,16 +408,6 @@ onMounted(async () => {
   if (availablePools.value.length > 0) {
     selectedPool.value = availablePools.value[0]
     refreshCurrentPool()
-  }
-
-  // 测试数据 - 模拟设置当前秘书舰（实际应从游戏中获取）
-  // 这里只是演示，实际应用中应该通过游戏API获取
-  const testShipId = 1; // 假设为长门
-  if (start2Store.shipList[testShipId]) {
-    const result = developmentStore.setFlagship(testShipId)
-    if (result) {
-      flagshipInfo.value = result
-    }
   }
 
   // 初始计算

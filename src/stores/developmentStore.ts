@@ -68,13 +68,16 @@ export const useDevelopmentStore = defineStore('development', () => {
    * 由舰船反查所属开发池，取「最窄」的那个（舰ID 数量最少）。
    * 仅用于提示，不参与任何计算。
    */
-  function setFlagship(shipId: number) {
+  function setFlagship(shipId: number): { pool: DevelopmentPoolClass; shipInfo: unknown } | null {
     const candidates = developmentPools.value.filter(
       (p) => p.开发池ID > 0 && p.舰ID.includes(shipId),
     )
     if (!candidates.length || !start2Store.shipList[shipId]) return null
     const pool = candidates.reduce((min, cur) => (cur.舰ID.length >= min.舰ID.length ? min : cur))
-    return { pool, shipInfo: start2Store.shipList[shipId] }
+    // ref<DevelopmentPoolClass[]>() 令 .value 的元素类型经 Vue 的 UnwrapRef 丢失
+    // 私有字段 text，结构上不再是 DevelopmentPoolClass（同 DevelopmentView.vue 里
+    // pools() 的处理）。运行时仍是 createPools() 生成的真实实例。
+    return { pool: pool as unknown as DevelopmentPoolClass, shipInfo: start2Store.shipList[shipId] }
   }
 
   async function initializeData() {
