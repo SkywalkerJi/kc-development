@@ -12,8 +12,17 @@ interface EquipLike { broken: number[] }
  * 编排层：把 View 与对拍（oracle）共用的两段「调用一串叶函数」的胶水代码
  * 收敛到这一处。之前这段编排各自在 DevelopmentView.vue 与 tests/oracle.spec.ts
  * 里手写了一份，753 组基准向量只验证了叶函数本身、验证不到编排顺序、
- * 排序、准入判断这些环节——两处调用点现在都指向本文件，对拍才真的会经过
- * 生产入口。
+ * 排序、准入判断这些环节——现在两处调用点都指向本文件，对拍与生产共用
+ * 同一对编排函数（computePoolRates / computeRecipes）。
+ *
+ * 准确说明覆盖边界：对拍能保证「这两个函数体本身算对」，但不覆盖
+ * View 到这两个函数的调用点——View 传给它们的实参（pools()/selectedPool/
+ * resources、existPool/targets/equipList 等）是否正确，对拍看不到（对拍
+ * 用的是 loadFixtures() 自建的数据，不经过 DevelopmentView.vue 的
+ * refreshCurrentPool/refreshResults 那几行代码）。实测：只改 View 调用点
+ * 的传参（不改这两个函数本身），对拍 753 组仍然全绿——这条覆盖缺口需要
+ * 挂载组件的测试（如 @vue/test-utils）才能补上，本次未引入该依赖，
+ * 见 tests/oracle.spec.ts 顶部对应的说明。
  *
  * 零 Vue/Pinia 依赖：入参、返回值全是普通数据结构。
  */

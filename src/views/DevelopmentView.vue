@@ -401,6 +401,14 @@ function refreshEnabled() {
 }
 
 // 初始化数据
+// 如实说明覆盖边界：initFailed 这段 onMounted 逻辑本身没有被自动化测试覆盖——
+// vitest.config.ts 的 test.environment 是 'node'，没有接入 @vitejs/plugin-vue
+// 或 @vue/test-utils，SFC 没法在测试里挂载。developmentStore.initializeData()
+// 的返回值契约（success:false 时不缓存、可重试）由 developmentStore.spec.ts
+// 覆盖到了生产代码本身；但"View 拿到 success:false 后真的会置位 initFailed、
+// 模板真的会据此不渲染主内容"这件事，目前只能靠人工核对，同 tests/oracle.spec.ts
+// 与 src/core/orchestration.ts 里记录的"View 接线未被覆盖"是同一类盲区。
+// 引入 @vue/test-utils 做组件挂载测试可以补上，本次未引入该依赖。
 onMounted(async () => {
   // 初始化开发数据。之前这里不检查返回值，success:false 时照样往下走，
   // 用一份空的/上一次成功时的旧 developmentPools 渲染出一个看起来正常、

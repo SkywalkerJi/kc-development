@@ -94,6 +94,12 @@ describe('parseResourceInput — G1 清洗后转换为送入算法的数值', ()
 // deep watch 链路上（复刻 DevelopmentView.vue 里 @input 的接线），验证表格里
 // 每一类畸形输入最终喂给"重算"的都是全整数数组——不是只测到纯函数为止，
 // 而是测到审查要求的"进算法前"这一步。
+//
+// 如实说明覆盖边界：下面 makeInputHarness 里的 watch(resources, ...) 是在
+// 测试里用真实的 Vue ref/watch **复刻**出来的一份接线，不是 DevelopmentView.vue
+// 里那个 watch 本身——sanitizeResourceInput/applyResourceChange 这两个函数是
+// 真实生产代码，但"View 是否真的这样接线调用它们"这件事，这份测试测不出来
+// （需要挂载组件的测试，如 @vue/test-utils，本次未引入该依赖）。
 describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以非整数或截断值进入算法」', () => {
   function makeInputHarness() {
     const resources = ref<number[]>([10, 10, 10, 10])
@@ -184,6 +190,8 @@ describe('F1 watcher 陷阱：deep watch(resources) 不能在整数校验前直�
   // 用真实的 Vue ref/watch 复刻 DevelopmentView.vue 里的接线方式（调用
   // applyResourceChange 决定是否重算），验证小数在被纠正之前，"重算" 从未
   // 拿到过一份含小数的 resources。这是本条发现要求的实测，不是靠读代码推断。
+  // 同上：这是复刻出来的接线，不是真实 View 接线本身，见上面 G1 describe
+  // 块开头的边界说明。
   it('[10,10,10,10.5]：recompute 从未见过含小数的数组，最终收敛回 [10,10,10,10]', async () => {
     const resources = ref<number[]>([10, 10, 10, 10])
     const lastValid = ref<number[]>([10, 10, 10, 10])

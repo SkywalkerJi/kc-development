@@ -52,8 +52,12 @@ describe('对拍：向量新鲜度（数据哈希）', () => {
   })
 })
 
-// 反推侧对拍现在直接调用生产入口 computeRecipes（DevelopmentView.vue 的
-// refreshResults 用的是同一个函数）——不再在测试里重新编排一遍算法。
+// 反推侧对拍现在调用的是 computeRecipes——DevelopmentView.vue 的 refreshResults
+// 用的是同一个函数，不再在测试里重新编排一遍算法。准确的说法是「对拍与生产
+// 共用同一对编排函数」，而不是「对拍经过了生产入口」：本文件用 loadFixtures()
+// 自建数据直接调用 computeRecipes，从不经过 DevelopmentView.vue 里
+// refreshResults 那几行「取值 → 调用 → 写回 ref」的代码本身——View 把什么
+// 实参传给这个函数，对拍看不到（详见 src/core/orchestration.ts 顶部的说明）。
 // canonicalSortResults 只用来把两侧都归一化到确定全序以便逐条比较，
 // 不影响 computeRecipes 内部已经产出的（sortResults）展示顺序。
 function derive(targets: number[]): DevelopResult[] {
@@ -94,8 +98,10 @@ describe('对拍：正向出货率', () => {
       const base = fx.pools.find((p) => p.开发池名称 === v.pool && p.开发池ID >= 0)
       expect(base).toBeDefined()
 
-      // 正向侧对拍现在直接调用生产入口 computePoolRates（DevelopmentView.vue 的
-      // refreshCurrentPool 用的是同一个函数）——不再在测试里重新编排一遍算法。
+      // 正向侧对拍现在调用的是 computePoolRates——DevelopmentView.vue 的
+      // refreshCurrentPool 用的是同一个函数，不再在测试里重新编排一遍算法。
+      // 同上，这只保证「函数体本身算对」，不保证 View 传给它的实参是对的
+      // （对拍不经过 refreshCurrentPool 那几行代码）。
       const { details: mine } = computePoolRates(fx.pools, base!, res)
 
       const sortKeys = (o: Record<string, number[]>) =>

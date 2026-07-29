@@ -117,6 +117,11 @@ describe('sumGroupRate', () => {
   })
 })
 
+// 这里测的是 DevelopmentView.vue 实际调用的同一个函数（groupedEquipments
+// 计算属性直接调用 groupEquipmentsWithVisibility，不是复制出来的另一份实现），
+// 所以函数体本身被真实覆盖。但没有覆盖到的是 View 那个计算属性传参本身对不
+// 对——比如 resources.value 传错、targets 传错，这套函数级测试测不出来，
+// 需要挂载组件的测试（如 @vue/test-utils）才能补上，本次未引入该依赖。
 describe('groupEquipmentsWithVisibility — F6 分组显示条件', () => {
   const equipList = {
     19: { id: 19, broken: [1, 1, 1, 1] },
