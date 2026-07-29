@@ -18,25 +18,49 @@
         <FlagshipSearch :matched="flagshipMatched" @select="onFlagshipSelect" />
 
         <!-- 资源输入区域 -->
+        <!--
+          type="text" + inputmode="numeric"（而不是 type="number" + v-model.number）：
+          number 输入框在拿到值之前就已经用 parseFloat 转换过一遍，非数字字符
+          （小数点、e、十六进制的 x、字母……）造成的问题这一层完全看不到、也拦不住。
+          这里改成拿原始字符串，在 @input 里剥离非数字字符（见 onResourceInput /
+          core/resourceValidation.ts 的 sanitizeResourceInput），让非法形式在
+          输入阶段就打不出来，而不是打完再回退。
+        -->
         <div class="resource-inputs">
           <div class="resource-group">
             <label for="fuel">油</label>
-            <input id="fuel" type="number" v-model.number="resources[0]" min="10" max="300"  @blur="normalizeResource(0)">
+            <input id="fuel" type="text" inputmode="numeric" :value="resources[0]"
+              @input="onResourceInput(0, $event)"
+              @compositionstart="onCompositionStart"
+              @compositionend="onCompositionEnd($event, 0)"
+              @blur="normalizeResource(0)">
           </div>
-          
+
           <div class="resource-group">
             <label for="ammo">弹</label>
-            <input id="ammo" type="number" v-model.number="resources[1]" min="10" max="300"  @blur="normalizeResource(1)">
+            <input id="ammo" type="text" inputmode="numeric" :value="resources[1]"
+              @input="onResourceInput(1, $event)"
+              @compositionstart="onCompositionStart"
+              @compositionend="onCompositionEnd($event, 1)"
+              @blur="normalizeResource(1)">
           </div>
-          
+
           <div class="resource-group">
             <label for="steel">钢</label>
-            <input id="steel" type="number" v-model.number="resources[2]" min="10" max="300"  @blur="normalizeResource(2)">
+            <input id="steel" type="text" inputmode="numeric" :value="resources[2]"
+              @input="onResourceInput(2, $event)"
+              @compositionstart="onCompositionStart"
+              @compositionend="onCompositionEnd($event, 2)"
+              @blur="normalizeResource(2)">
           </div>
-          
+
           <div class="resource-group">
             <label for="bauxite">铝</label>
-            <input id="bauxite" type="number" v-model.number="resources[3]" min="10" max="300" @blur="normalizeResource(3)">
+            <input id="bauxite" type="text" inputmode="numeric" :value="resources[3]"
+              @input="onResourceInput(3, $event)"
+              @compositionstart="onCompositionStart"
+              @compositionend="onCompositionEnd($event, 3)"
+              @blur="normalizeResource(3)">
           </div>
         </div>
         
@@ -203,7 +227,12 @@ import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
 import { formatRateDetail, sortEquipIds, groupEquipmentsWithVisibility } from '@/core/grouping'
 import { computeEnabledEquipIds } from '@/core/enabledSet'
-import { validateResourceValue, applyResourceChange } from '@/core/resourceValidation'
+import {
+  validateResourceValue,
+  applyResourceChange,
+  sanitizeResourceInput,
+  parseResourceInput,
+} from '@/core/resourceValidation'
 
 // 获取 store
 const developmentStore = useDevelopmentStore()
@@ -375,10 +404,11 @@ onMounted(async () => {
 })
 
 // 监听资源变化，更新结果。
-// v-model.number 每次按键都会把当前输入（哪怕是小数）直接写进 resources，
-// 早于 @blur 触发的整数校验；这里先做一遍整数判断——有非整数项就整体回退且
-// 本轮不重算（回退会再触发一次本 watcher，用纠正后的整数值重算），
-// 避免小数在被纠正前先用错误值算出一次结果。
+// 输入框的 @input（onResourceInput）已经把非数字字符剥离在先，正常输入路径下
+// 这里基本不会再拿到非整数；但 resources 也可能被别处整体替换（如 selectResult
+// 应用配方结果、或空输入被转换成的 NaN），这里仍先做一遍整数判断兜底——
+// 有非整数项就整体回退且本轮不重算（回退会再触发一次本 watcher，用纠正后的
+// 整数值重算），避免非法值在被纠正前先用错误值算出一次结果。
 watch(resources, () => {
   const result = applyResourceChange(resources.value, lastValid.value)
   lastValid.value = result.lastValid
@@ -396,6 +426,43 @@ function onPoolChanged() {
   refreshCurrentPool()
   refreshResults()
   refreshEnabled()
+}
+
+// 资源输入框类型，兼容 IME 组合输入状态标记（composing 由 compositionstart/end 维护，
+// 做法与 Vue 内置的 v-model 文本输入指令一致：组合输入期间的中间态 input 事件不处理，
+// 只在 compositionend 时用最终文本处理一次，避免中文/日文等 IME 候选过程中的中间
+// 字符被当成"用户输入"提前剥离/写回，导致候选框行为异常或输入被打断）。
+type ComposingInput = HTMLInputElement & { composing?: boolean }
+
+function onCompositionStart(event: Event) {
+  (event.target as ComposingInput).composing = true
+}
+
+function onCompositionEnd(event: Event, index: number) {
+  const target = event.target as ComposingInput
+  if (!target.composing) return
+  target.composing = false
+  onResourceInput(index, event)
+}
+
+// 资源输入框的 @input：从源头把非数字字符剥离掉，让 "100.0"/"1e2"/"0x64"/
+// "100abc" 这类非法形式在输入阶段就不成立，而不是等进了 resources 数组、
+// 触发一次错误重算之后再回退纠正。sanitizeResourceInput 之后转换成 number
+// 写回 resources（空串转换为 NaN，交给下面 watch(resources) 里的
+// applyResourceChange 走既有的非整数回退分支，不额外分叉一条路径）。
+//
+// 之所以手动 :value + @input 而不是 v-model：需要在剥离掉字符后，把纠正过的
+// 文本立即写回 DOM（`target.value = sanitized`）。这里不能只依赖 Vue 的响应式
+// 重渲染来纠正显示——剥离前后转换出的 number 可能不变（比如当前是 100，
+// 又输入一个 "." 变成 "100."，剥离后还是 "100"，number 值没变），此时 Vue
+// 认为数据没变化、不会触发 DOM patch，如果不在这里手动纠正，浏览器会一直
+// 显示用户刚输入的非法字符 "100."。
+function onResourceInput(index: number, event: Event) {
+  const target = event.target as ComposingInput
+  if (target.composing) return
+  const sanitized = sanitizeResourceInput(target.value)
+  target.value = sanitized
+  resources.value[index] = parseResourceInput(sanitized)
 }
 
 // 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）
