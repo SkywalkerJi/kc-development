@@ -32,8 +32,9 @@
           number 输入框在拿到值之前就已经用 parseFloat 转换过一遍，非数字字符
           （小数点、e、十六进制的 x、字母……）造成的问题这一层完全看不到、也拦不住。
           这里改成拿原始字符串，在 @input 里剥离非数字字符（见 onResourceInput /
-          core/resourceValidation.ts 的 sanitizeResourceInput），让非法形式在
-          输入阶段就打不出来，而不是打完再回退。
+          core/resourceValidation.ts 的 resolveResourceInputText），让非法形式在
+          输入阶段就打不出来、粘贴等一次性写入的非法形式被整体拒绝，而不是打完
+          再回退或接受剥离结果。
         -->
         <div class="resource-inputs">
           <div class="resource-group">
@@ -239,7 +240,7 @@ import { computeEnabledEquipIds } from '@/core/enabledSet'
 import {
   validateResourceValue,
   applyResourceChange,
-  sanitizeResourceInput,
+  resolveResourceInputText,
   parseResourceInput,
 } from '@/core/resourceValidation'
 
@@ -474,22 +475,28 @@ function onCompositionEnd(event: Event, index: number) {
 
 // 资源输入框的 @input：从源头把非数字字符剥离掉，让 "100.0"/"1e2"/"0x64"/
 // "100abc" 这类非法形式在输入阶段就不成立，而不是等进了 resources 数组、
-// 触发一次错误重算之后再回退纠正。sanitizeResourceInput 之后转换成 number
-// 写回 resources（空串转换为 NaN，交给下面 watch(resources) 里的
-// applyResourceChange 走既有的非整数回退分支，不额外分叉一条路径）。
+// 触发一次错误重算之后再回退纠正。
 //
-// 之所以手动 :value + @input 而不是 v-model：需要在剥离掉字符后，把纠正过的
-// 文本立即写回 DOM（`target.value = sanitized`）。这里不能只依赖 Vue 的响应式
-// 重渲染来纠正显示——剥离前后转换出的 number 可能不变（比如当前是 100，
-// 又输入一个 "." 变成 "100."，剥离后还是 "100"，number 值没变），此时 Vue
-// 认为数据没变化、不会触发 DOM patch，如果不在这里手动纠正，浏览器会一直
-// 显示用户刚输入的非法字符 "100."。
+// resolveResourceInputText 区分了两种情形（详见其定义处注释）：
+// - 逐字符键入混入单个非法字符（比如敲了一下 "."）：清洗结果等于打这个字符
+//   之前的文本，效果是"这一下按键被吃掉"，不影响已经打出来的数字。
+// - 一次性写入（典型是粘贴）混入非法字符（比如粘贴 "10.5"）：不能接受剥离
+//   出来的 "105"——那是用户没打过、也不会预期的数字。这种情况整体拒绝，
+//   回退到上一个合法值，等价于"这次输入完全没有发生"。
+// 两种情形用同一次判断产出同一个文本，再据此同步写 DOM 与 resources，
+// 两者不会脱节。
+//
+// 之所以手动 :value + @input 而不是 v-model：需要把最终确定的文本立即写回
+// DOM（`target.value = text`）。这里不能只依赖 Vue 的响应式重渲染来纠正
+// 显示——转换出的 number 可能不变（比如当前是 100，又输入一个 "." 变成
+// "100."，剥离后还是 "100"，number 值没变），此时如果不在这里手动纠正，
+// 浏览器会一直显示用户刚输入的非法字符 "100."。
 function onResourceInput(index: number, event: Event) {
   const target = event.target as ComposingInput
   if (target.composing) return
-  const sanitized = sanitizeResourceInput(target.value)
-  target.value = sanitized
-  resources.value[index] = parseResourceInput(sanitized)
+  const text = resolveResourceInputText(target.value, String(lastValid.value[index]))
+  target.value = text
+  resources.value[index] = parseResourceInput(text)
 }
 
 // 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）

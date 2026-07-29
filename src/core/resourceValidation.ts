@@ -42,6 +42,32 @@ export function parseResourceInput(sanitized: string): number {
 }
 
 /**
+ * 决定一次 `@input` 事件的原始文本，最终应该被当成「用户实际打出来的文本」
+ * 来处理——同时驱动"该往输入框里显示什么"和"该往 resources 里写什么数值"
+ * 这两件事，两者由同一次判断产出，不会互相脱节。
+ *
+ * `sanitizeResourceInput` 是**剥离**语义：逐字符输入时这没问题——非法字符
+ * （比如 "."）在按下的当下就被吃掉，用户根本打不出来，剥离结果自然等于
+ * "打这个字符之前"的文本。但如果一次 `@input` 事件里，原始文本（`raw`）本身
+ * 就非空、且清洗后与原文本不同，说明这次输入是**一次性**混入了非法字符——
+ * 典型场景是粘贴 / 拖拽 / 自动填充等一次性写入多个字符（比如粘贴 "10.5"）。
+ * 这种情况不能接受剥离后的结果："10.5" 剥离成 "105" 是一个用户既没打算
+ * 输入、也不会预期的"第三个数"。这里整体拒绝这次输入，返回上一个合法值——
+ * 效果等价于这次输入完全没有发生（保持旧值），而不是从中提取出一个新数字。
+ *
+ * 空字符串（用户清空了整个输入框）不落进拒绝分支（要求 `raw` 非空）：
+ * `sanitizeResourceInput('')` 本来就是 `''`，`raw === sanitized`，直接走
+ * 下面的正常分支返回 `''`，交给调用方走既有的
+ * `parseResourceInput('') → NaN → applyResourceChange 非整数回退`这条路径，
+ * 不受这里新增的拒绝逻辑影响。
+ */
+export function resolveResourceInputText(raw: string, lastValidText: string): string {
+  const sanitized = sanitizeResourceInput(raw)
+  if (raw !== '' && raw !== sanitized) return lastValidText
+  return sanitized
+}
+
+/**
  * 失焦时的单项资源校验：非整数回退到上一个合法值；整数夹到 [10, 300] 区间。
  */
 export function validateResourceValue(value: number, lastValid: number): number {

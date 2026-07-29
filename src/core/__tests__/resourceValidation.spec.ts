@@ -5,6 +5,7 @@ import {
   applyResourceChange,
   sanitizeResourceInput,
   parseResourceInput,
+  resolveResourceInputText,
 } from '@/core/resourceValidation'
 
 describe('validateResourceValue — F1 失焦校验', () => {
@@ -53,7 +54,7 @@ describe('sanitizeResourceInput — G1 从源头剥离非数字字符', () => {
     ['1e2', '12', '科学计数法的 e 被剥离，不会被当成 100 解析'],
     ['0x64', '064', '十六进制前缀的 x 被剥离，不会像 parseFloat 那样悄悄变成 0'],
     ['100abc', '100', '尾随字母被剥离'],
-    ['10.5', '105', '小数点被剥离——非法形式在输入阶段就打不出来，不是打完再回退'],
+    ['10.5', '105', '小数点被剥离——这是字符级过滤本身的结果'],
     ['', '', '空串保持空串'],
     ['   ', '', '纯空格全部剥离成空串'],
     ['-5', '5', '负号被剥离（资源不可能为负）'],
@@ -90,16 +91,52 @@ describe('parseResourceInput — G1 清洗后转换为送入算法的数值', ()
   })
 })
 
-// 把 sanitizeResourceInput/parseResourceInput 接到 applyResourceChange 的
-// deep watch 链路上（复刻 DevelopmentView.vue 里 @input 的接线），验证表格里
-// 每一类畸形输入最终喂给"重算"的都是全整数数组——不是只测到纯函数为止，
-// 而是测到审查要求的"进算法前"这一步。
+// 第二轮审查残留 1：sanitizeResourceInput 是**剥离**语义。逐字符输入时这没
+// 问题（非法字符在按下的当下就被吃掉，用户根本打不出来）；但粘贴一个 "10.5"
+// 进去，剥离会得到 "105"——一个用户没打过、也没预期的"第三个数"。
+// resolveResourceInputText 把"这次输入到底该被当成什么文本处理"这个判断
+// 单独收口成一个纯函数：一次性写入（粘贴/拖拽/自动填充）里混了非法字符时，
+// 整体拒绝、回退到上一个合法值，而不是接受剥离结果。
+describe('resolveResourceInputText — 残留1：一次性写入的非法字符必须被整体拒绝', () => {
+  it.each([
+    ['100.0', '不能变成剥离后的 1000'],
+    ['1e2', '不能变成剥离后的 12'],
+    ['0x64', '不能变成剥离后的 064'],
+    ['100abc', '不能变成剥离后的 100'],
+    ['10.5', '不能变成剥离后的 105'],
+    ['...', '清洗后为空串，同样要回退到旧值，不是变成空串'],
+  ])('resolveResourceInputText(%j, "50") === "50"（%s）', (raw) => {
+    expect(resolveResourceInputText(raw, '50')).toBe('50')
+  })
+
+  it('原始文本本身干净（清洗前后一致）：直接返回清洗结果，不触发拒绝', () => {
+    expect(resolveResourceInputText('100', '50')).toBe('100')
+    expect(resolveResourceInputText('7', '50')).toBe('7')
+  })
+
+  it('原始文本是空串（清空输入框）：不落进拒绝分支，返回空串，交给 parseResourceInput 走既有的 NaN 回退', () => {
+    expect(resolveResourceInputText('', '50')).toBe('')
+  })
+
+  it('单个非法字符混进已有的合法文本（模拟逐字符打了一下 "."）：清洗结果等于打这个字符之前的文本，效果与"什么都没打"一致', () => {
+    // "10." 是在已经打出 "10" 之后，多打了一个 "." 形成的——清洗后还是 "10"，
+    // 与 lastValidText 传入的 "10" 一致，属于"清洗结果 === 打这个字符前的文本"
+    // 这种典型情况，不需要真的走到拒绝分支也能得到同样的结果。
+    expect(resolveResourceInputText('10.', '10')).toBe('10')
+  })
+})
+
+// 把 sanitizeResourceInput/parseResourceInput/resolveResourceInputText 接到
+// applyResourceChange 的 deep watch 链路上（复刻 DevelopmentView.vue 里
+// @input 的接线），验证表格里每一类畸形输入最终喂给"重算"的都是全整数数组——
+// 不是只测到纯函数为止，而是测到审查要求的"进算法前"这一步。
 //
 // 如实说明覆盖边界：下面 makeInputHarness 里的 watch(resources, ...) 是在
 // 测试里用真实的 Vue ref/watch **复刻**出来的一份接线，不是 DevelopmentView.vue
-// 里那个 watch 本身——sanitizeResourceInput/applyResourceChange 这两个函数是
-// 真实生产代码，但"View 是否真的这样接线调用它们"这件事，这份测试测不出来
-// （需要挂载组件的测试，如 @vue/test-utils，本次未引入该依赖）。
+// 里那个 watch 本身——sanitizeResourceInput/parseResourceInput/
+// resolveResourceInputText/applyResourceChange 都是真实生产代码，但"View 是否
+// 真的这样接线调用它们"这件事，这份测试测不出来（需要挂载组件的测试，
+// 本次未引入相关依赖）。
 describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以非整数或截断值进入算法」', () => {
   function makeInputHarness() {
     const resources = ref<number[]>([10, 10, 10, 10])
@@ -116,23 +153,24 @@ describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以�
       recompute([...resources.value])
     }, { deep: true })
 
-    // 复刻 DevelopmentView.vue 的 onResourceInput：拿原始字符串 → 清洗 → 转数值 → 写回。
-    function typeRaw(index: number, raw: string) {
-      const sanitized = sanitizeResourceInput(raw)
-      resources.value[index] = parseResourceInput(sanitized)
+    // 复刻 DevelopmentView.vue 的 onResourceInput：raw 是这次 input 事件触发
+    // 时 target.value 的完整内容（这里用一次性写入整段文本来模拟粘贴场景）。
+    async function fireInputEvent(index: number, raw: string) {
+      const text = resolveResourceInputText(raw, String(lastValid.value[index]))
+      resources.value[index] = parseResourceInput(text)
+      await nextTick()
+      await nextTick() // 给非整数触发的回退留出结算时间
     }
 
-    return { resources, recompute, typeRaw }
+    return { resources, lastValid, recompute, fireInputEvent }
   }
 
   it.each([
     ['100.0'], ['1e2'], ['0x64'], ['100abc'], ['10.5'], [''], ['   '],
-  ])('原始输入 %j：recompute 收到的每一项都必须是整数', async (raw) => {
-    const { resources, recompute, typeRaw } = makeInputHarness()
+  ])('一次性写入（粘贴场景） %j：resources 最终必须是整数，recompute 收到的每一项也都必须是整数', async (raw) => {
+    const { resources, recompute, fireInputEvent } = makeInputHarness()
 
-    typeRaw(3, raw)
-    await nextTick()
-    await nextTick() // 非整数（如空串→NaN）触发的回退会再引一轮 watch
+    await fireInputEvent(3, raw)
 
     for (const call of recompute.mock.calls) {
       expect(call[0].every((v: number) => Number.isInteger(v))).toBe(true)
@@ -141,19 +179,113 @@ describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以�
     expect(resources.value.every((v) => Number.isInteger(v))).toBe(true)
   })
 
-  it('"0x64" 最终落在按字符剥离后的确定值（064 → 64），不是 parseFloat 悄悄给出的 0', async () => {
-    const { resources, typeRaw } = makeInputHarness()
-    typeRaw(3, '0x64')
-    await nextTick()
-    expect(resources.value[3]).toBe(64)
+  it('粘贴 "0x64"：被残留1的拒绝逻辑整体拒绝，停留在粘贴前的旧值 10，不是剥离出来的 64', async () => {
+    const { resources, fireInputEvent } = makeInputHarness()
+    await fireInputEvent(3, '0x64')
+    expect(resources.value[3]).toBe(10)
   })
 
-  it('"100abc" 落在剥离字母后的 100，且 recompute 至少被调用过一次整数数组', async () => {
-    const { resources, recompute, typeRaw } = makeInputHarness()
-    typeRaw(3, '100abc')
-    await nextTick()
+  it('粘贴 "100abc"：同样被整体拒绝，停留在 10，recompute 不会被这次粘贴触发', async () => {
+    const { resources, recompute, fireInputEvent } = makeInputHarness()
+    await fireInputEvent(3, '100abc')
+    expect(resources.value[3]).toBe(10)
+    expect(recompute).not.toHaveBeenCalled()
+  })
+})
+
+// 第二轮审查残留 1 补充验证：确认这个改动不会破坏正常输入体验——连续逐字符
+// 输入、退格删除、清空输入框这三种最常见的交互都要不受影响。
+describe('残留1：正常输入体验不受影响——连续输入 / 退格 / 清空', () => {
+  function makeInputHarness() {
+    const resources = ref<number[]>([10, 10, 10, 10])
+    const lastValid = ref<number[]>([10, 10, 10, 10])
+    const recompute = vi.fn()
+
+    watch(resources, () => {
+      const result = applyResourceChange(resources.value, lastValid.value)
+      lastValid.value = result.lastValid
+      if (result.revertedResources) {
+        resources.value = result.revertedResources
+        return
+      }
+      recompute([...resources.value])
+    }, { deep: true })
+
+    async function fireInputEvent(index: number, raw: string) {
+      const text = resolveResourceInputText(raw, String(lastValid.value[index]))
+      resources.value[index] = parseResourceInput(text)
+      await nextTick()
+      await nextTick()
+    }
+
+    return { resources, lastValid, recompute, fireInputEvent }
+  }
+
+  it('连续逐字符输入合法数字：全选后依次打 "1"→"10"→"100"，每一步都被正常接受', async () => {
+    const { resources, fireInputEvent } = makeInputHarness()
+    await fireInputEvent(3, '1')
+    expect(resources.value[3]).toBe(1)
+    await fireInputEvent(3, '10')
+    expect(resources.value[3]).toBe(10)
+    await fireInputEvent(3, '100')
+    expect(resources.value[3]).toBe(100)
+  })
+
+  it('逐字符打 "100abc"（全选后逐字敲键）：数字正常累积到 100 并触发一次重算；随后敲的字母 a/b/c 各自被当次吃掉，不影响已经打出来的 100，也不会再次触发重算', async () => {
+    const { resources, recompute, fireInputEvent } = makeInputHarness()
+
+    await fireInputEvent(3, '1')     // 全选后打第一个字符，替换掉原来的 "10"
+    await fireInputEvent(3, '10')
+    await fireInputEvent(3, '100')
     expect(resources.value[3]).toBe(100)
     expect(recompute).toHaveBeenCalledWith([10, 10, 10, 100])
+    recompute.mockClear()
+
+    await fireInputEvent(3, '100a')   // 在已结算的 "100" 后面敲了个 "a"
+    expect(resources.value[3]).toBe(100)
+    await fireInputEvent(3, '100ab')
+    expect(resources.value[3]).toBe(100)
+    await fireInputEvent(3, '100abc')
+    expect(resources.value[3]).toBe(100)
+    // 三次字母键入都被吃掉、数值没有变化，不应该有新的重算被触发
+    expect(recompute).not.toHaveBeenCalled()
+  })
+
+  it('退格删除：从已结算的 "100" 删掉最后一位变成 "10"，正常生效', async () => {
+    const { resources, fireInputEvent } = makeInputHarness()
+    await fireInputEvent(3, '1')
+    await fireInputEvent(3, '10')
+    await fireInputEvent(3, '100')
+    expect(resources.value[3]).toBe(100)
+
+    await fireInputEvent(3, '10') // 退格：文本从 "100" 变成 "10"
+    expect(resources.value[3]).toBe(10)
+  })
+
+  it('清空输入框（全选后删除，raw 是空串）：不落进残留1新增的拒绝分支（要求 raw 非空），走的是既有的 NaN 回退，回退到上一个合法值，不受这次改动影响', async () => {
+    const { resources, fireInputEvent } = makeInputHarness()
+    await fireInputEvent(3, '1')
+    await fireInputEvent(3, '10')
+    await fireInputEvent(3, '100')
+    expect(resources.value[3]).toBe(100)
+
+    await fireInputEvent(3, '') // 清空
+    expect(resources.value[3]).toBe(100) // 回退到清空前的合法值，不是停在空/NaN
+  })
+
+  it('粘贴与逐字符输入的对照：同样是 "100abc"，粘贴（一次性写入）被整体拒绝停在旧值；逐字符打出来则正常累积到 100——两种输入方式的结果不同，且都符合各自的预期', async () => {
+    const pasted = makeInputHarness()
+    await pasted.fireInputEvent(3, '100abc')
+    expect(pasted.resources.value[3]).toBe(10) // 粘贴：整体拒绝，停在初始值 10
+
+    const typed = makeInputHarness()
+    await typed.fireInputEvent(3, '1')
+    await typed.fireInputEvent(3, '10')
+    await typed.fireInputEvent(3, '100')
+    await typed.fireInputEvent(3, '100a')
+    await typed.fireInputEvent(3, '100ab')
+    await typed.fireInputEvent(3, '100abc')
+    expect(typed.resources.value[3]).toBe(100) // 逐字符：正常累积到 100
   })
 })
 
