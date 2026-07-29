@@ -14,6 +14,11 @@ pnpm sync-data --from /path/to/dir
 
 脚本会剥离源文件中的注释、校验数据完整性，并打印本次变更摘要。
 
+⚠️ **更新这三份数据文件后必须重新生成 `tests/fixtures/vectors.json`**（基准对拍向量），
+否则 `pnpm test` 会因为 `tests/oracle.spec.ts` 的哈希校验测试而失败——该测试比对
+`vectors.json` 里记录的数据文件 SHA-256 与 `public/data/` 下的实际哈希，
+用来防止「数据更新了但忘记重新生成基准」这种情况被静默放过。
+
 ## 测试
 
 ```sh
