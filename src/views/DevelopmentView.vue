@@ -201,7 +201,8 @@ import type { DevelopResult, PoolType, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import {
-  findCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits, EQUIP_96_LAND_ATTACKER,
+  findCompatiblePools, sortCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits,
+  EQUIP_96_LAND_ATTACKER,
 } from '@/core/poolMatching'
 import { selectPoolType, deriveRecipes, evaluateRecipe, sortResults } from '@/core/recipe'
 import { classifyEquip, formatRateDetail, isAffordable, sortEquipIds } from '@/core/grouping'
@@ -342,14 +343,10 @@ function refreshCurrentPool() {
   if (!selectedPool.value) return
   const res = resources.value as unknown as Resources
   const poolType = selectPoolType(res)
-  const compatible = findCompatiblePools(
-    pools(), selectedPool.value as unknown as DevelopmentPoolClass, poolType, res,
-  )
-  // 宽池在前：舰ID 多的排前面，数量相同则出货率条目多的排前面
-  compatible.sort((a, b) =>
-    a.舰ID.length === b.舰ID.length
-      ? Object.keys(b.出货率 ?? {}).length - Object.keys(a.出货率 ?? {}).length
-      : b.舰ID.length - a.舰ID.length,
+  const compatible = sortCompatiblePools(
+    findCompatiblePools(
+      pools(), selectedPool.value as unknown as DevelopmentPoolClass, poolType, res,
+    ),
   )
 
   const details = mergeDropRateDetails(compatible)

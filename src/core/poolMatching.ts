@@ -71,6 +71,23 @@ export function mergeDropRateDetails(
   return out
 }
 
+/**
+ * 兼容池的排列顺序：舰ID 多的（更宽的池）在前，数量相同则出货率条目多的在前。
+ * 这不是显示细节 —— 它决定 mergeDropRateDetails 产出的序列，
+ * 进而决定出货率明细的显示形态（如 "6%-2%" 与 "0%+6%"）。
+ * 生产路径与对拍测试必须共用这一份，否则对拍覆盖不到生产实际走的排序。
+ * 返回新数组，不修改入参。
+ */
+export function sortCompatiblePools(
+  pools: DevelopmentPoolClass[],
+): DevelopmentPoolClass[] {
+  return [...pools].sort((a, b) =>
+    a.舰ID.length === b.舰ID.length
+      ? Object.keys(b.出货率 ?? {}).length - Object.keys(a.出货率 ?? {}).length
+      : b.舰ID.length - a.舰ID.length,
+  )
+}
+
 /** 准入判断：只有出货率 > 0 的装备才算「这个池能出」。 */
 export function poolAdmits(dropRates: Map<number, number>, targets: number[]): boolean {
   for (const t of targets) if ((dropRates.get(t) ?? 0) <= 0) return false

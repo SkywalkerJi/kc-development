@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createPools } from '@/core/developmentPool'
 import {
-  findCompatiblePools, mergeDropRates, mergeDropRateDetails,
+  findCompatiblePools, sortCompatiblePools, mergeDropRates, mergeDropRateDetails,
   poolAdmits, allEquipIds, EQUIP_96_LAND_ATTACKER,
 } from '@/core/poolMatching'
 import type { DevelopmentPoolData } from '@/core/types'
@@ -42,6 +42,32 @@ describe('findCompatiblePools', () => {
     const gated = pool('门槛', 1, [1], { '20': 4 }, [300, 0, 0, 0])
     expect(findCompatiblePools([base, gated], base, 1, [10, 10, 10, 10])).toHaveLength(1)
     expect(findCompatiblePools([base, gated], base, 1, [300, 10, 10, 10])).toHaveLength(2)
+  })
+})
+
+describe('sortCompatiblePools', () => {
+  it('舰ID 数量不同时按数量降序（宽池在前）', () => {
+    const narrow = pool('窄', 1, [1], { '10': 8 })
+    const wide = pool('宽', 1, [1, 2, 3], { '10': 8 })
+    const mid = pool('中', 1, [1, 2], { '10': 8 })
+    expect(sortCompatiblePools([narrow, wide, mid]).map((p) => p.开发池名称))
+      .toEqual(['宽', '中', '窄'])
+  })
+
+  it('舰ID 数量相同时按出货率条目数降序', () => {
+    const few = pool('少', 1, [1, 2], { '10': 8 })
+    const many = pool('多', 1, [1, 2], { '10': 8, '20': 4, '30': 2 })
+    expect(sortCompatiblePools([few, many]).map((p) => p.开发池名称))
+      .toEqual(['多', '少'])
+  })
+
+  it('不修改入参数组：返回新数组，原数组顺序不变', () => {
+    const a = pool('A', 1, [1], { '10': 8 })
+    const b = pool('B', 1, [1, 2], { '10': 8 })
+    const input = [a, b]
+    const result = sortCompatiblePools(input)
+    expect(input).toEqual([a, b])
+    expect(result).not.toBe(input)
   })
 })
 

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadFixtures } from './helpers/loadFixtures'
-import { findCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits } from '@/core/poolMatching'
+import {
+  findCompatiblePools, sortCompatiblePools, mergeDropRates, mergeDropRateDetails, poolAdmits,
+} from '@/core/poolMatching'
 import { selectPoolType, deriveRecipes, evaluateRecipe, canonicalSortResults } from '@/core/recipe'
 import type { DevelopResult, PoolType, Resources } from '@/core/types'
 
@@ -68,11 +70,8 @@ describe('对拍：正向出货率', () => {
       const base = fx.pools.find((p) => p.开发池名称 === v.pool && p.开发池ID >= 0)
       expect(base).toBeDefined()
 
-      const compatible = findCompatiblePools(fx.pools, base!, v.poolType as PoolType, res)
-      compatible.sort((a, b) =>
-        a.舰ID.length === b.舰ID.length
-          ? Object.keys(b.出货率 ?? {}).length - Object.keys(a.出货率 ?? {}).length
-          : b.舰ID.length - a.舰ID.length,
+      const compatible = sortCompatiblePools(
+        findCompatiblePools(fx.pools, base!, v.poolType as PoolType, res),
       )
 
       const mine: Record<string, number[]> = {}
