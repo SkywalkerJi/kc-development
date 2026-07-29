@@ -8,7 +8,6 @@
       placeholder="输入日文舰名或假名读音"
       autocomplete="off"
       @input="onInput"
-      @focus="onInput"
     />
     <ul v-if="open && suggestions.length" class="suggestions">
       <li v-for="s in suggestions" :key="s.id" @click="choose(s.id)">
@@ -44,6 +43,10 @@ const resolved = ref<{ poolName: string } | null>(null)
  * 少了这一步会有两个后果：选中某舰后继续编辑，下方会一直显示与当前输入
  * 不符的旧归属；且模板里「未找到该舰」那条 v-else-if 因 resolved 恒真
  * 而永远不可达。
+ *
+ * ⚠️ 只绑 @input，**不要**同时绑 @focus。
+ * 「展开列表」和「清空结果」是两件事，绑在一起会让用户选中某舰后
+ * 再点回输入框时，刚查到的归属池凭空消失。列表只在输入真正变化时展开。
  */
 function onInput() {
   open.value = true
