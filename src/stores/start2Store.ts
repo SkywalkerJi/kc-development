@@ -154,6 +154,12 @@ export const useStart2Store = defineStore('start2', () => {
       }
     } catch (error) {
       console.error('读取start2数据失败:', error)
+      // 必须重抛：这是关键数据，解析失败（如接口返回结构变化、空对象等）不能
+      // 被当作"已处理"悄悄放过。不重抛的话 shipList/equipList 会以空表状态
+      // 留在下面，_initializeData 的 success 保持 true，调用方拿到一个看似
+      // 成功、实则空的数据集，且这个"成功"会被 initializeData 的进行中缓存
+      // 永久保存——刷新页面前都无法重试。
+      throw error
     }
   }
   
@@ -561,22 +567,25 @@ export const useStart2Store = defineStore('start2', () => {
   }
   
   // 初始化方法（内部实现，外部一律经 initializeData 的进行中缓存调用）
+  //
+  // 返回值契约：关键数据（舰船/装备）加载失败一律以 reject 表达，不会以
+  // `{ success: false }` 的形式正常返回——下面 initializeData 的进行中缓存
+  // (`inflight ??= _initializeData().catch(...)`) 只在 promise 被 reject 时
+  // 才会清空缓存；如果这里改成"捕获后返回 success:false"，缓存就不会清空，
+  // 一次失败会被永久缓存成不可恢复状态。因此这个函数能正常 return 的路径，
+  // `success` 永远是 true——深海舰船数据加载失败由 readAbyssalStats 自己的
+  // try/catch 吞掉（不重抛，只打日志），根本不会传到这里，所以不影响 success；
+  // 它不是"必须有"的数据，故意设计成非致命。
   const _initializeData = async () => {
-    let success = true
-    let error = null
-    
     try {
-      // 第一步：加载舰船和装备数据
+      // 第一步：加载舰船和装备数据（关键数据，失败必须让整个初始化失败）
       await readStart2()
       console.log('舰船和装备数据加载成功')
     } catch (err) {
-      success = false
-      error = err
       console.error('舰船和装备数据加载失败:', err)
-      // 这是关键数据，加载失败就抛出异常
       throw new Error('基础舰船数据加载失败，无法继续')
     }
-    
+
     try {
       // 第二步：加载深海舰船数据
       await readAbyssalStats()
@@ -600,8 +609,8 @@ export const useStart2Store = defineStore('start2', () => {
     console.log(`舰种类型: ${api_mst_stype.value.length}种`)
     console.log(api_mst_stype.value)
     console.log('=== 数据加载完成 ===')
-    
-    return { success, error }
+
+    return { success: true, error: null }
   }
 
   // 进行中去重：并发调用只触发一次真实加载，避免重复拉取 1.9MB 的 start2.json
@@ -613,9 +622,9 @@ export const useStart2Store = defineStore('start2', () => {
 
   const initializeData = () =>
     (inflight ??= _initializeData().catch((e) => {
-      // 失败必须清空，否则一次瞬时网络错误会被永久缓存成不可恢复状态。
-      // （注：_initializeData 内部的 readStart2/readAbyssalStats 目前会自行
-      // 吞掉异常而不外抛，此分支当前不可达，但作为进行中缓存的通用契约保留。）
+      // 失败必须清空，否则一次瞬时网络错误（或数据解析失败）会被永久缓存成
+      // 不可恢复状态：下次调用方拿到的仍是同一个已 reject 的 promise，永远
+      // 不会重试。readStart2 解析失败会走到这里（它会重抛，见其定义处注释）。
       inflight = null
       throw e
     }))

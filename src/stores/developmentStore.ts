@@ -80,20 +80,40 @@ export const useDevelopmentStore = defineStore('development', () => {
     return { pool: pool as unknown as DevelopmentPoolClass, shipInfo: start2Store.shipList[shipId] }
   }
 
+  // 内部实现：外部一律经 initializeData 的进行中缓存调用（同 start2Store 的模式）。
+  async function _initializeData() {
+    // 必须先确保 start2 就绪：pool.init() 要用 shipList 把筛选条件展开成 舰ID，
+    // 拿到空表就会展不开，导致后续所有出货率计算失效。这里的判空只是一层快路径
+    // （已就绪时省一次函数调用），真正防止重复拉取/重复重建 filterButtonList 的
+    // 是下面 initializeData 自身的进行中缓存——这个判空单独存在时管不住，因为
+    // 它只覆盖 start2Store.initializeData() 这一次调用，本函数自己接下来的
+    // readCtypeData / readDevelopmentPools / initFilterButtonList 完全不受它保护。
+    if (Object.keys(start2Store.shipList).length === 0) {
+      await start2Store.initializeData()
+    }
+    await readCtypeData()
+    await readDevelopmentPools()
+    initFilterButtonList()
+  }
+
+  // 进行中去重：App.vue 同时挂载 DataInitializer 与 DevelopmentView，两者的
+  // onMounted 都并发调用 developmentStore.initializeData()。没有这层缓存的话，
+  // 两次调用各自完整跑一遍 _initializeData()——两次 ctype 请求、两次
+  // DevelopmentPool 请求，initFilterButtonList() 跑两遍，第二遍会整体替换
+  // filterButtonList，静默清空用户刚做的装备选择。
+  //
+  // 缓存语义：并发调用、以及成功后的重复调用，只会真正执行 _initializeData()
+  // 一次（inflight 常驻）。只有失败会清空 inflight——此时下一次调用会重新跑
+  // 完整的一遍（含重建 filterButtonList），这是预期的重试行为，不是 bug。
+  let inflight: ReturnType<typeof _initializeData> | null = null
+
   async function initializeData() {
     try {
-      // 必须先确保 start2 就绪：pool.init() 要用 shipList 把筛选条件展开成 舰ID，
-      // 拿到空表就会展不开，导致后续所有出货率计算失效。
-      // App.vue 同时挂载 DataInitializer 与本视图，两者的 onMounted 都是 async 且
-      // 并发调用 start2Store.initializeData()。真正的去重发生在 start2Store 内部
-      // （进行中 Promise 缓存），这里的判空只是一层无害的快路径：已就绪时跳过一次
-      // 函数调用，不判空也不会重复拉取或重复重建 filterButtonList。
-      if (Object.keys(start2Store.shipList).length === 0) {
-        await start2Store.initializeData()
-      }
-      await readCtypeData()
-      await readDevelopmentPools()
-      initFilterButtonList()
+      await (inflight ??= _initializeData().catch((e) => {
+        // 失败必须清空，否则一次瞬时失败会被永久缓存成不可恢复状态。
+        inflight = null
+        throw e
+      }))
       return { success: true, error: null }
     } catch (error) {
       console.error('开发池数据加载失败:', error)
