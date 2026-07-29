@@ -1,6 +1,24 @@
 # kc-development
 
-一个新的舰娘装备模拟开发工具，算法和数据来自梦美工具。
+舰娘装备开发配方计算器。
+
+## 数据更新
+
+装备开发的出货率表与游戏基础数据存放在 `public/data/`，通过同步脚本更新：
+
+```sh
+pnpm sync-data                      # 从默认源目录同步
+pnpm sync-data --from /path/to/dir  # 指定源目录
+```
+
+脚本会剥离源文件中的注释、校验数据完整性，并打印本次变更摘要。
+
+## 测试
+
+```sh
+pnpm test        # 单元测试 + 基准对拍
+pnpm type-check  # 类型检查
+```
 
 This template should help get you started developing with Vue 3 in Vite.
 
