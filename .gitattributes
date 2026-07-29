@@ -1,0 +1,5 @@
+# 基准数据与对拍向量按原始字节计算 SHA-256（见 tests/oracle.spec.ts 的哈希校验），
+# 不能让 Git 在检出/提交时做任何换行符转换（例如 Windows 上的 core.autocrlf=true
+# 会把 LF 转成 CRLF），否则字节级哈希会产生与实际内容无关的假漂移。
+public/data/*.json -text
+tests/fixtures/*.json -text

@@ -19,6 +19,12 @@ pnpm sync-data --from /path/to/dir
 `vectors.json` 里记录的数据文件 SHA-256 与 `public/data/` 下的实际哈希，
 用来防止「数据更新了但忘记重新生成基准」这种情况被静默放过。
 
+⚠️ **生成向量的工具不在本仓库内**：`tests/fixtures/vectors.json` 是一份固化好的基准，
+`meta.dataHashes` 只能证明「`public/data/` 与生成向量时使用的数据一致」，
+不能证明向量可以凭本仓库的内容重新生成——生成它的独立工具及其自身的校验逻辑
+都不随本仓库分发。需要更新基准时，须在能访问该工具的环境里重新生成
+`vectors.json` 后再提交进来；仅凭 `git clone` 这个仓库无法完成这一步。
+
 ## 测试
 
 ```sh
