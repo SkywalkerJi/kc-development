@@ -560,8 +560,8 @@ export const useStart2Store = defineStore('start2', () => {
     return shipList.value[id] || null
   }
   
-  // 初始化方法
-  const initializeData = async () => {
+  // 初始化方法（内部实现，外部一律经 initializeData 的进行中缓存调用）
+  const _initializeData = async () => {
     let success = true
     let error = null
     
@@ -603,7 +603,23 @@ export const useStart2Store = defineStore('start2', () => {
     
     return { success, error }
   }
-  
+
+  // 进行中去重：并发调用只触发一次真实加载，避免重复拉取 1.9MB 的 start2.json
+  // （以及连带的 199KB abyssal_stats.json）并重复执行 loadEquipStatus 等下游步骤。
+  // App.vue 同时挂载 DataInitializer 与 DevelopmentView，两者各自 await
+  // initializeData()，若无此缓存，第二个调用方进入时第一个的 fetch 还没
+  // resolve，状态判空守卫拦不住，会触发第二次完整加载链路。
+  let inflight: ReturnType<typeof _initializeData> | null = null
+
+  const initializeData = () =>
+    (inflight ??= _initializeData().catch((e) => {
+      // 失败必须清空，否则一次瞬时网络错误会被永久缓存成不可恢复状态。
+      // （注：_initializeData 内部的 readStart2/readAbyssalStats 目前会自行
+      // 吞掉异常而不外抛，此分支当前不可达，但作为进行中缓存的通用契约保留。）
+      inflight = null
+      throw e
+    }))
+
   return {
     shipList,
     equipList,

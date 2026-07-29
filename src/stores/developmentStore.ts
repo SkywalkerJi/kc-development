@@ -84,10 +84,10 @@ export const useDevelopmentStore = defineStore('development', () => {
     try {
       // 必须先确保 start2 就绪：pool.init() 要用 shipList 把筛选条件展开成 舰ID，
       // 拿到空表就会展不开，导致后续所有出货率计算失效。
-      // 这个守卫修掉了一个既有竞态 —— App.vue 同时挂载 DataInitializer 与本视图，
-      // 两者的 onMounted 都是 async 且并发，而本视图只加载 18KB、DataInitializer 要加载
-      // 1.9MB 的 start2，本视图几乎必然先跑完并用空表初始化开发池。
-      // 判空即跳过，重复调用是安全的。
+      // App.vue 同时挂载 DataInitializer 与本视图，两者的 onMounted 都是 async 且
+      // 并发调用 start2Store.initializeData()。真正的去重发生在 start2Store 内部
+      // （进行中 Promise 缓存），这里的判空只是一层无害的快路径：已就绪时跳过一次
+      // 函数调用，不判空也不会重复拉取或重复重建 filterButtonList。
       if (Object.keys(start2Store.shipList).length === 0) {
         await start2Store.initializeData()
       }
