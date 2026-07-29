@@ -83,38 +83,66 @@ export interface ResourceChangeResult {
    * 调用方应只在此时重新赋值 resources，并直接返回、不重算。
    */
   revertedResources: number[] | null
-  /** 校验通过时推进到当前值；发生回退时保持不变，避免用未确认的输入污染基准。 */
+  /**
+   * 校验通过且全部落在 [10,300] 内时推进到当前值；发生非整数回退、或存在
+   * 越界项时保持不变——越界的整数不能被当成"已确认的合法值"存进去，否则
+   * 将来某次非整数回退会把这个越界值当成回退目标，绕过范围限制把它重新
+   * 喂给算法。
+   */
   lastValid: number[]
-  /** 本轮是否应该继续跑重算。 */
+  /**
+   * 本轮是否应该继续跑重算。只有"全部是整数、且全部落在 [10,300] 内"才为
+   * true；存在非整数项、或存在越界整数项，都是 false——区别只在于前者会把
+   * resources 整体回退（`revertedResources` 非 null），后者保持 resources
+   * 原样、只是不重算（`revertedResources` 仍是 null，调用方不应替换
+   * resources，只是跳过这一轮的重算）。
+   */
   recompute: boolean
 }
 
 /**
  * `watch(resources, ...)` 是 deep 的、且直接进算法。输入框现在先经过
- * `sanitizeResourceInput` + `parseResourceInput` 才写进 resources，正常
- * 输入路径下这里几乎不会再拿到非整数——但空输入会转成 NaN 写进来，且这个
- * 函数本身不依赖「值一定来自输入框」（resources 也可能被别处直接整体替换，
- * 比如 `selectResult` 应用配方结果），所以这道整数判断作为第二层防御继续保留，
- * 不因为输入框已经做了字符级过滤就可以去掉。
+ * `sanitizeResourceInput`/`resolveResourceInputText` + `parseResourceInput`
+ * 才写进 resources，正常输入路径下这里几乎不会再拿到非整数——但空输入会
+ * 转成 NaN 写进来，且这个函数本身不依赖「值一定来自输入框」（resources 也
+ * 可能被别处直接整体替换，比如 `selectResult` 应用配方结果），所以这道
+ * 整数判断作为第二层防御继续保留，不因为输入框已经做了字符级过滤就可以去掉。
  *
- * 因此把「这一轮该不该重算」做成显式返回值：只要有任意一项不是整数，
- * 就整体回退到上一个合法值、且本轮不重算——回退这一步本身会再触发一次
- * watch，用纠正后的整数值重算；全部合法时才推进 lastValid 并允许重算。
+ * 越界但仍是整数的值（比如刚打完的 "500"，还没失焦）**不会**被回退、也
+ * **不会**被拒绝显示——用户能继续看到自己打的 "500"；但也不会立刻用这个
+ * 越界值触发一次重算，算法结果保持上一次的样子，直到失焦时
+ * `validateResourceValue` 把它夹回 [10,300] 再重算（View 里失焦对应的
+ * `normalizeResource` 是无条件重算的，不受这里 `recompute` 门槛影响——
+ * "输入过程中越界不重算、失焦才夹紧并无条件重算"这两条时机各自独立，
+ * 不要把失焦路径也改成越界不重算）。
+ *
+ * 因此把「这一轮该不该重算」做成显式返回值：
+ * - 存在非整数项：整体回退到上一个合法值、且本轮不重算——回退这一步本身
+ *   会再触发一次 watch，用纠正后的整数值重算。
+ * - 全部是整数但存在越界项：不回退（resources 保持原样、用户能看到自己打的
+ *   越界数字）、不推进 lastValid、且本轮不重算。
+ * - 全部是整数且全部落在 [10,300] 内：推进 lastValid 并允许重算。
  */
 export function applyResourceChange(
   current: readonly number[],
   lastValid: readonly number[],
 ): ResourceChangeResult {
-  let changed = false
+  let hasNonInteger = false
   const next = current.slice()
   for (let i = 0; i < next.length; i++) {
     if (!Number.isInteger(next[i])) {
       next[i] = lastValid[i]
-      changed = true
+      hasNonInteger = true
     }
   }
-  if (changed) {
+  if (hasNonInteger) {
     return { revertedResources: next, lastValid: lastValid.slice(), recompute: false }
   }
+
+  const inRange = next.every((v) => v >= 10 && v <= 300)
+  if (!inRange) {
+    return { revertedResources: null, lastValid: lastValid.slice(), recompute: false }
+  }
+
   return { revertedResources: null, lastValid: next.slice(), recompute: true }
 }

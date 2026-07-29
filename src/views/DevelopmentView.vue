@@ -437,6 +437,11 @@ onMounted(async () => {
 // 应用配方结果、或空输入被转换成的 NaN），这里仍先做一遍整数判断兜底——
 // 有非整数项就整体回退且本轮不重算（回退会再触发一次本 watcher，用纠正后的
 // 整数值重算），避免非法值在被纠正前先用错误值算出一次结果。
+//
+// result.recompute 为 false 且 revertedResources 为 null 时，是"全部是整数但
+// 存在越界项"（比如刚打完还没失焦的 "500"）：resources 保持原样（用户能看到
+// 自己打的 500），但不重算——重算要等失焦时 validateResourceValue 把它夹回
+// [10,300] 之后（normalizeResource 无条件重算，不受这里的 recompute 门槛影响）。
 watch(resources, () => {
   const result = applyResourceChange(resources.value, lastValid.value)
   lastValid.value = result.lastValid
@@ -444,6 +449,7 @@ watch(resources, () => {
     resources.value = result.revertedResources
     return
   }
+  if (!result.recompute) return
   refreshCurrentPool()
   refreshResults()
   refreshEnabled()

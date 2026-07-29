@@ -150,11 +150,14 @@ describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以�
         resources.value = result.revertedResources
         return
       }
+      if (!result.recompute) return
       recompute([...resources.value])
     }, { deep: true })
 
     // 复刻 DevelopmentView.vue 的 onResourceInput：raw 是这次 input 事件触发
-    // 时 target.value 的完整内容（这里用一次性写入整段文本来模拟粘贴场景）。
+    // 时 target.value 的完整内容。调用方按"一次性写入整段文本"（粘贴）或
+    // "在当前已结算的值后面追加一个字符"（逐字符键入）两种方式构造 raw，
+    // 对应真实浏览器里粘贴与打字的不同行为。
     async function fireInputEvent(index: number, raw: string) {
       const text = resolveResourceInputText(raw, String(lastValid.value[index]))
       resources.value[index] = parseResourceInput(text)
@@ -208,6 +211,7 @@ describe('残留1：正常输入体验不受影响——连续输入 / 退格 / 
         resources.value = result.revertedResources
         return
       }
+      if (!result.recompute) return
       recompute([...resources.value])
     }, { deep: true })
 
@@ -290,7 +294,7 @@ describe('残留1：正常输入体验不受影响——连续输入 / 退格 / 
 })
 
 describe('applyResourceChange — F1 watcher 前置整数判断', () => {
-  it('全部是整数时不回退，推进 lastValid 并允许重算', () => {
+  it('全部是整数且全部在 [10,300] 内：不回退，推进 lastValid 并允许重算', () => {
     const result = applyResourceChange([10, 10, 10, 10], [10, 10, 10, 10])
     expect(result).toEqual({
       revertedResources: null,
@@ -318,6 +322,52 @@ describe('applyResourceChange — F1 watcher 前置整数判断', () => {
   })
 })
 
+// 第二轮审查残留 2：全部是整数、但存在越界项（不在 [10,300] 内）时，输入
+// 过程中不该立即用越界值触发重算。这是审查明确点名的一处与某类参考实现
+// 不同的地方：那类实现在"输入变化"这个时机点，只有整数且落在合法区间内
+// 才更新缓存并重算；越界时什么都不做（既不重算，也不回退显示），等失焦
+// 才夹紧并无条件重算。
+describe('applyResourceChange — 残留2：越界整数不回退显示、但也不重算', () => {
+  it('单项越界（超过 300）：不回退（revertedResources 为 null，resources 应保持原样）、不推进 lastValid、不重算', () => {
+    const result = applyResourceChange([10, 10, 10, 500], [10, 10, 10, 10])
+    expect(result.revertedResources).toBeNull()
+    expect(result.lastValid).toEqual([10, 10, 10, 10]) // 不推进，仍是旧值
+    expect(result.recompute).toBe(false)
+  })
+
+  it('单项越界（低于 10）：同样不回退、不推进、不重算', () => {
+    const result = applyResourceChange([10, 10, 10, 5], [10, 10, 10, 10])
+    expect(result.revertedResources).toBeNull()
+    expect(result.lastValid).toEqual([10, 10, 10, 10])
+    expect(result.recompute).toBe(false)
+  })
+
+  it('边界值 10 与 300 本身视为合法，不落入越界分支', () => {
+    const result = applyResourceChange([10, 300, 10, 10], [10, 10, 10, 10])
+    expect(result.revertedResources).toBeNull()
+    expect(result.lastValid).toEqual([10, 300, 10, 10])
+    expect(result.recompute).toBe(true)
+  })
+
+  it('非整数优先于越界判断：存在非整数项时整体走非整数回退分支；越界但本身仍是整数的其它项不参与这次回退，原样保留在 revertedResources 里', () => {
+    const result = applyResourceChange([10.5, 500, 10, 10], [10, 20, 10, 10])
+    // 下标 0 是非整数，被替换成 lastValid[0]=10；下标 1 的 500 本身是整数，
+    // 不落进"非整数回退"这个分支的处理范围，原样保留。
+    expect(result.revertedResources).toEqual([10, 500, 10, 10])
+    expect(result.recompute).toBe(false)
+    expect(result.lastValid).toEqual([10, 20, 10, 10]) // 未推进，仍是调用前的值
+  })
+
+  it('从越界恢复到合法区间：下一次输入落回 [10,300] 后，正常推进 lastValid 并重算', () => {
+    const first = applyResourceChange([10, 10, 10, 500], [10, 10, 10, 10])
+    expect(first.recompute).toBe(false)
+    const second = applyResourceChange([10, 10, 10, 200], first.lastValid)
+    expect(second.revertedResources).toBeNull()
+    expect(second.lastValid).toEqual([10, 10, 10, 200])
+    expect(second.recompute).toBe(true)
+  })
+})
+
 describe('F1 watcher 陷阱：deep watch(resources) 不能在整数校验前直接进算法', () => {
   // 用真实的 Vue ref/watch 复刻 DevelopmentView.vue 里的接线方式（调用
   // applyResourceChange 决定是否重算），验证小数在被纠正之前，"重算" 从未
@@ -336,10 +386,11 @@ describe('F1 watcher 陷阱：deep watch(resources) 不能在整数校验前直�
         resources.value = result.revertedResources
         return
       }
+      if (!result.recompute) return
       recompute([...resources.value])
     }, { deep: true })
 
-    // 模拟 v-model.number 把铝资源打成小数（复现 [10,10,10,10.5]）
+    // 模拟把铝资源打成小数（复现 [10,10,10,10.5]）
     resources.value[3] = 10.5
     await nextTick()
     await nextTick() // 回退触发的第二轮 watch
@@ -352,22 +403,17 @@ describe('F1 watcher 陷阱：deep watch(resources) 不能在整数校验前直�
   })
 })
 
-describe('F1：越界（但合法）值经小数回退后仍会被失焦夹紧，不会永久滞留', () => {
-  // lastValid 只在“非整数回退”这一条路径上使用，每次按键只要还是整数就会
-  // 推进它，哪怕越界（比如刚打完 "500" 还没失焦）。这里验证：这种越界、未夹紧
-  // 的 lastValid 不会导致失焦后仍然越界——validateResourceValue 的夹紧分支
-  // 不依赖 lastValid，失焦永远会重新夹一遍。
-  //
-  // 明确这条锁的是本实现自己选的语义，不是照搬某个参考行为：失焦时
-  // validateResourceValue 让 resources 与 lastValid 一起夹到 [10,300]，
-  // 即 lastValid 全程只保存「已校验过、可安全喂给算法」的值，从不保存越界值。
-  // 这是刻意的选择——resources 本身就是直接喂给算法的那份数据，
-  // applyResourceChange 的回退分支（`next[i] = lastValid[i]`）不会再做一次
-  // 夹紧；如果 lastValid 允许保存越界值（比如失焦后仍保留未夹紧的 500），
-  // 一旦后续输入触发回退，算法会直接吃到这个未夹紧的越界值。因此本实现
-  // 不采用「失焦只夹紧显示、内部备份值不夹紧」这种在别处见过的做法，
-  // 已核对过其代价（备份值可能把越界数据带回算法）后确认不适用于这里——
-  // 这不是一个未经核对、顺手写下的假设。
+// 越界整数不会被 lastValid 记住（残留2），失焦时始终按当前显示值夹紧。
+//
+// 明确这条锁的是本实现自己选的语义，不是照搬某个参考行为：失焦时
+// validateResourceValue 让 resources 与 lastValid 一起夹到 [10,300]，
+// 即 lastValid 全程只保存「已校验过、可安全喂给算法」的值，从不保存越界值。
+// 这是刻意的选择——resources 本身就是直接喂给算法的那份数据，
+// applyResourceChange 的回退分支（`next[i] = lastValid[i]`）不会再做一次
+// 夹紧；如果 lastValid 允许保存越界值，一旦后续输入触发回退，算法会直接
+// 吃到这个未夹紧的越界值。因此本实现不采用「失焦只夹紧显示、内部备份值
+// 不夹紧」这种在别处见过的做法，已核对过其代价后确认不适用于这里。
+describe('F1/残留2：越界整数不会污染 lastValid，失焦无条件按当前显示值夹紧', () => {
   function makeHarness() {
     const resources = ref<number[]>([10, 10, 10, 10])
     const lastValid = ref<number[]>([10, 10, 10, 10])
@@ -389,37 +435,50 @@ describe('F1：越界（但合法）值经小数回退后仍会被失焦夹紧�
     return { resources, lastValid, blur }
   }
 
-  it('连续打完 "500"（不失焦，lastValid 跟着推进到越界值 500）→ 再打成 "500.5" → 回退到未夹紧的 500 → 失焦后 resources 与 lastValid 一起夹到 300', async () => {
-    const { resources, lastValid, blur } = makeHarness()
-
-    resources.value[3] = 5
-    await nextTick()
-    resources.value[3] = 50
-    await nextTick()
+  it('打完 "500"（不失焦）：resources 保持显示 500，但 lastValid 停留在上一个合法值 10，不会被越界值污染', async () => {
+    const { resources, lastValid } = makeHarness()
     resources.value[3] = 500
     await nextTick()
-    expect(lastValid.value[3]).toBe(500) // 越界，尚未失焦夹紧
+    expect(resources.value[3]).toBe(500) // 保持显示原样，不回退
+    expect(lastValid.value[3]).toBe(10) // 越界，不推进
+  })
 
-    resources.value[3] = 500.5
+  it('打完 "5"（低于下限，不失焦）：同样保持显示、lastValid 不推进', async () => {
+    const { resources, lastValid } = makeHarness()
+    resources.value[0] = 5
     await nextTick()
+    expect(resources.value[0]).toBe(5)
+    expect(lastValid.value[0]).toBe(10)
+  })
+
+  it('先打一个合法的 "50"（推进 lastValid），再打越界的 "500"：lastValid 停在 50，不会被 500 覆盖', async () => {
+    const { resources, lastValid } = makeHarness()
+    resources.value[3] = 50
     await nextTick()
-    expect(resources.value[3]).toBe(500) // 回退到上一个合法整数，而不是被悄悄夹紧
+    expect(lastValid.value[3]).toBe(50)
+
+    resources.value[3] = 500
+    await nextTick()
+    expect(resources.value[3]).toBe(500) // 显示原样
+    expect(lastValid.value[3]).toBe(50) // 仍是上一个合法值，没被 500 覆盖
+  })
+
+  it('失焦时无条件按当前显示值夹紧——"500" 会被夹到 300，不受 lastValid 停留在 10 这件事影响', async () => {
+    const { resources, lastValid, blur } = makeHarness()
+    resources.value[3] = 500
+    await nextTick()
+    expect(lastValid.value[3]).toBe(10) // 越界未推进
 
     blur(3)
-    // 关键断言：失焦后 lastValid 与 resources 一起被夹到 300，不保留未夹紧的
-    // 500。这是本实现的既定选择（见上面 describe 的说明），不是待核对的假设。
+    // 关键断言：失焦夹紧用的是"当前显示的 500"，不是 lastValid 里那个更旧的
+    // 10——两者夹出来的结果不一样（500→300，10→10），这里验证走的是前者。
     expect(resources.value[3]).toBe(300)
     expect(lastValid.value[3]).toBe(300)
   })
 
-  it('打成 "5"（低于下限，不失焦）→ 打成 "5.5" → 回退到 5；失焦 → 10', async () => {
+  it('打成 "5"（低于下限，不失焦）→ 失焦 → 夹到 10', async () => {
     const { resources, blur } = makeHarness()
-
     resources.value[0] = 5
-    await nextTick()
-
-    resources.value[0] = 5.5
-    await nextTick()
     await nextTick()
     expect(resources.value[0]).toBe(5)
 
