@@ -73,7 +73,12 @@ export interface GroupedEquipments<T> {
  * 前三组（目标/其它/资源不足）按「组总出货率 > 0」判定；
  * 「全部被替换」组按数量判定，不能和前三组统一成总率——
  * 该组每个成员的 total 都恒为 0（见 classifyEquip），组总率恒为 0，
- * 用总率判断会让这一组永远不显示，这与参考实现的 list5.Count > 0 不符。
+ * 用总率判断会让这一组永远不显示，这与参考实现按数量判定的做法不符。
+ *
+ * ⚠️ 「总率恒为 0」只对**组头**成立，不要外推到成员行的出货率列：
+ * 该列展示的是逐池明细（formatRateDetail 的输出），本组的典型形态是
+ * 2%-2%、4%-2%-2% 这种正负相抵的叠加过程，不是 0%。参考实现在分组之前
+ * 就为每一件装备算好了这个串，本组的行同样带着它。
  */
 export function groupEquipmentsWithVisibility<T extends { id: number; broken: number[] }>(
   ids: number[],

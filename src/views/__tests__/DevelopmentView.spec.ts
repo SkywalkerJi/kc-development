@@ -191,3 +191,357 @@ describe('DevelopmentView — H1 rawResources/committedResources 拆分', () => 
     expect(container!.querySelectorAll('.insufficient-equipment').length).toBe(2)
   })
 })
+
+// 下面这组覆盖「与参考实现的可观测差异」这一类修复。它们都必须挂载真实
+// SFC 才测得到——被修的东西全在模板与 refresh* 的接线里，core 层的单元测试
+// 看不见。
+describe('DevelopmentView — 与参考实现对齐的展示与按钮状态', () => {
+  let pinia: Pinia
+  let app: App | null = null
+  let container: HTMLElement | null = null
+
+  beforeEach(() => {
+    pinia = createPinia()
+    setActivePinia(pinia)
+    const developmentStore = useDevelopmentStore()
+    const start2Store = useStart2Store()
+
+    start2Store.equipList = {
+      100: { id: 100, name: '装备甲', types: [0, 0, 1, 1], broken: [1, 1, 1, 1] },
+      200: { id: 200, name: '装备乙', types: [0, 0, 1, 1], broken: [1, 1, 1, 1] },
+    } as never
+
+    // 两个池：正池给装备甲 +2%，负池把它减回 0%。于是装备甲的逐池明细是
+    // [2, -2]、合计 0 —— 正好落进「全部被替换」组，用来锁定该组成员行的
+    // 出货率列展示的是明细串而不是写死的 "0%"。
+    // 装备乙只在正池里，保证「其它装备」组非空、页面结构完整。
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: '测试池', 开发池ID: 3, 舰ID: [], 出货率: { '100': 2, '200': 5 } },
+      { 开发池名称: '测试池扣减', 开发池ID: -3, 舰ID: [], 出货率: { '100': -2 } },
+    ])
+    developmentStore.existPool = ['测试池']
+    developmentStore.filterButtonList = {
+      100: { equipInfo: start2Store.equipList[100], select: false, enabled: true },
+      200: { equipInfo: start2Store.equipList[200], select: false, enabled: true },
+    } as never
+
+    vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    app?.unmount()
+    container?.remove()
+    app = null
+    container = null
+    vi.restoreAllMocks()
+  })
+
+  function mount() {
+    app = createApp(DevelopmentView)
+    app.use(pinia)
+    app.mount(container as HTMLElement)
+  }
+
+  it('「全部被替换」组的成员行展示逐池明细串，不是写死的 0%', async () => {
+    mount()
+    await flush()
+
+    const rows = container!.querySelectorAll('.replaced-equipment')
+    expect(rows.length).toBe(1)
+    const cells = rows[0].querySelectorAll('td')
+    expect(cells[1].textContent).toBe('装备甲')
+    // 参考实现在分组之前就算好了明细串，本组的行同样带着它。
+    // 这里是 +2% 之后又被 -2%，展示为 "2%-2%"，不是 "0%"。
+    expect(cells[2].textContent).toBe('2%-2%')
+  })
+
+  it('组头仍是固定的 0% —— 不要把组头和成员行「统一」掉', async () => {
+    mount()
+    await flush()
+    const headers = [...container!.querySelectorAll('.group-header')]
+    const replacedHeader = headers.find((h) => h.textContent?.includes('全部被替换'))
+    expect(replacedHeader).toBeDefined()
+    expect(replacedHeader!.querySelectorAll('td')[2].textContent).toBe('0%')
+  })
+
+  it('已选中的装备按钮不会被置灰，哪怕当前组合下启用集合为空', async () => {
+    const developmentStore = useDevelopmentStore()
+
+    // 这条测试要的是「启用集合为空」的状态，需要另一套池：
+    // 装备甲**只出现在负 ID 池里**。反推路径下负池不做减法，只把没见过的
+    // 装备登记为 0（减法只发生在正向路径），于是装备甲的合并出货率恒为 0，
+    // 过不了「出货率 > 0」的准入判断 —— 没有任何池准入，启用集合是空集。
+    // 这正是参考实现里「已选按钮保持高亮、其余全部置灰」的那个状态。
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: '测试池', 开发池ID: 3, 舰ID: [], 出货率: { '200': 5 } },
+      { 开发池名称: '扣减池', 开发池ID: -3, 舰ID: [], 出货率: { '100': -2 } },
+    ])
+
+    mount()
+    await flush()
+
+    const buttons = container!.querySelectorAll<HTMLButtonElement>('.equipment-buttons button')
+    expect(buttons.length).toBe(2)
+
+    buttons[0].click()
+    await flush()
+
+    expect(developmentStore.filterButtonList[100].select).toBe(true)
+    // 已选的那个：enabled 保持 true，不带 disabled 样式，仍然可点（可取消）
+    expect(developmentStore.filterButtonList[100].enabled).toBe(true)
+    expect(buttons[0].classList.contains('selected')).toBe(true)
+    expect(buttons[0].classList.contains('disabled')).toBe(false)
+    expect(buttons[0].disabled).toBe(false)
+    // 未选的那个：不在启用集合里，置灰
+    expect(developmentStore.filterButtonList[200].enabled).toBe(false)
+    expect(buttons[1].classList.contains('disabled')).toBe(true)
+
+    // 取消选择后全部恢复可用
+    buttons[0].click()
+    await flush()
+    expect(developmentStore.filterButtonList[100].enabled).toBe(true)
+    expect(developmentStore.filterButtonList[200].enabled).toBe(true)
+  })
+
+  it('资源变化只重算正向路径，不重算公式列表与按钮状态', async () => {
+    mount()
+    await flush()
+
+    const developmentStore = useDevelopmentStore()
+    // 记下按钮状态对象的引用与内容，用来观察它有没有被重写
+    const before = { ...developmentStore.filterButtonList[200] }
+
+    // 把按钮状态改成一个「只要 refreshEnabled 跑过就会被覆盖」的值。
+    // 资源变化不该触碰它 —— 参考实现在资源变化时只重算正向路径。
+    developmentStore.filterButtonList[200].enabled = false
+
+    const fuelInput = container!.querySelector<HTMLInputElement>('#fuel')!
+    fireInput(fuelInput, '30')
+    await flush()
+
+    // 正向路径确实重算了（资源被提交）
+    expect(fuelInput.value).toBe('30')
+    // 按钮状态没有被顺带重算回 true
+    expect(developmentStore.filterButtonList[200].enabled).toBe(false)
+    expect(before.enabled).toBe(true) // 说明初值确实是 true，上面那句不是恒真
+  })
+
+  it('清空输入框是合法的编辑中间态：不回填、不重算，失焦才还原', async () => {
+    mount()
+    await flush()
+
+    const fuelInput = container!.querySelector<HTMLInputElement>('#fuel')!
+    fireInput(fuelInput, '30')
+    await flush()
+    expect(fuelInput.value).toBe('30')
+
+    // 逐字符退到空。参考实现允许文本框在失焦前处于空状态，期间不重算。
+    fireInput(fuelInput, '3')
+    await flush()
+    expect(fuelInput.value).toBe('3')   // 3 < 10，越界不提交，但显示保留
+
+    fireInput(fuelInput, '')
+    await flush()
+    // 关键：空框保持空，不会「自己跳回 30」
+    expect(fuelInput.value).toBe('')
+
+    // 失焦：还原成上一个合法值
+    fireBlur(fuelInput)
+    await flush()
+    expect(fuelInput.value).toBe('30')
+  })
+})
+
+describe('DevelopmentView — 「可用公式」的选中语义', () => {
+  let pinia: Pinia
+  let app: App | null = null
+  let container: HTMLElement | null = null
+
+  beforeEach(() => {
+    pinia = createPinia()
+    setActivePinia(pinia)
+    const developmentStore = useDevelopmentStore()
+    const start2Store = useStart2Store()
+
+    // broken=[1,3,1,3] → 反推基线 [10,30,10,30]，油与钢都不占优，
+    // 油钢池因此产出**两条**候选公式（一条抬油、一条抬钢），正好用来测
+    // 「换行」与「同一行不重复触发」。
+    start2Store.equipList = {
+      300: { id: 300, name: '双候选装备', types: [0, 0, 1, 1], broken: [1, 3, 1, 3] },
+    } as never
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: '测试池', 开发池ID: 3, 舰ID: [], 出货率: { '300': 5 } },
+    ])
+    developmentStore.existPool = ['测试池']
+    developmentStore.filterButtonList = {
+      300: { equipInfo: start2Store.equipList[300], select: false, enabled: true },
+    } as never
+
+    vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    app?.unmount()
+    container?.remove()
+    app = null
+    container = null
+    vi.restoreAllMocks()
+  })
+
+  function mount() {
+    app = createApp(DevelopmentView)
+    app.use(pinia)
+    app.mount(container as HTMLElement)
+  }
+
+  /** 选中那件装备，让公式表出现两行；返回这两行。 */
+  async function showTwoResults() {
+    mount()
+    await flush()
+    container!.querySelector<HTMLButtonElement>('.equipment-buttons button')!.click()
+    await flush()
+    const rows = container!.querySelectorAll<HTMLTableRowElement>('.development-results tbody tr')
+    expect(rows.length).toBe(2)
+    return rows
+  }
+
+  it('自动应用第一条公式后，第一行处于选中态', async () => {
+    const rows = await showTwoResults()
+    expect(rows[0].classList.contains('result-selected')).toBe(true)
+    expect(rows[1].classList.contains('result-selected')).toBe(false)
+    // 抬油那条：[30,30,10,30]
+    expect(container!.querySelector<HTMLInputElement>('#fuel')!.value).toBe('30')
+  })
+
+  it('再次点击已选中的行不会覆盖用户手工输入的资源值', async () => {
+    const rows = await showTwoResults()
+    const fuelInput = container!.querySelector<HTMLInputElement>('#fuel')!
+    expect(fuelInput.value).toBe('30')
+
+    // 用户手工把油改成 200 并失焦
+    fireInput(fuelInput, '200')
+    fireBlur(fuelInput)
+    await flush()
+    expect(fuelInput.value).toBe('200')
+
+    // 再点同一行：参考实现的选中项没有变化，事件不触发，油应保持 200
+    rows[0].click()
+    await flush()
+    expect(fuelInput.value).toBe('200')
+  })
+
+  it('点击另一行才会应用那一行的公式', async () => {
+    const rows = await showTwoResults()
+    const fuelInput = container!.querySelector<HTMLInputElement>('#fuel')!
+    expect(fuelInput.value).toBe('30')
+
+    rows[1].click()   // 抬钢那条：[10,30,30,30]
+    await flush()
+    expect(fuelInput.value).toBe('10')
+    expect(container!.querySelector<HTMLInputElement>('#steel')!.value).toBe('30')
+    expect(rows[1].classList.contains('result-selected')).toBe(true)
+  })
+
+  it('点表头按该列排序，同列再点切换升降序', async () => {
+    const rows = await showTwoResults()
+    const cells = (r: HTMLTableRowElement) => [...r.querySelectorAll('td')].map((c) => c.textContent)
+    // 默认顺序：抬油 [30,30,10,30] 在前，抬钢 [10,30,30,30] 在后
+    expect(cells(rows[0])[1]).toBe('30')
+    expect(cells(rows[1])[1]).toBe('10')
+
+    const headers = container!.querySelectorAll<HTMLTableCellElement>('.development-results th')
+    const fuelHeader = [...headers].find((h) => h.textContent?.startsWith('油'))!
+    fuelHeader.click()
+    await flush()
+
+    let now = container!.querySelectorAll<HTMLTableRowElement>('.development-results tbody tr')
+    expect(cells(now[0])[1]).toBe('10')   // 升序
+    expect(cells(now[1])[1]).toBe('30')
+    expect(fuelHeader.getAttribute('aria-sort')).toBe('ascending')
+
+    fuelHeader.click()
+    await flush()
+    now = container!.querySelectorAll<HTMLTableRowElement>('.development-results tbody tr')
+    expect(cells(now[0])[1]).toBe('30')   // 降序
+    expect(fuelHeader.getAttribute('aria-sort')).toBe('descending')
+  })
+
+  it('数值列按数值排，不是按字符串排（刻意不复刻参考实现的这处缺陷）', async () => {
+    const developmentStore = useDevelopmentStore()
+    // 再加一个铝池，让总资源出现「两位数 + 三位数」的混合：
+    // 铝池 → [10,30,10,31] 合计 81；油钢池 → 两条各 100。
+    // 字符串升序是 "100","100","81"，数值升序才是 81,100,100 —— 两者不同，
+    // 这条测试才真的能判别按哪种方式排的。
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: '铝池', 开发池ID: 1, 舰ID: [], 出货率: { '300': 5 } },
+      { 开发池名称: '测试池', 开发池ID: 3, 舰ID: [], 出货率: { '300': 5 } },
+    ])
+    developmentStore.existPool = ['铝池', '测试池']
+
+    mount()
+    await flush()
+    container!.querySelector<HTMLButtonElement>('.equipment-buttons button')!.click()
+    await flush()
+
+    const readTotals = () =>
+      [...container!.querySelectorAll('.development-results tbody tr')]
+        .map((r) => r.querySelectorAll('td')[5].textContent!)
+    expect(new Set(readTotals())).toEqual(new Set(['81', '100']))
+
+    const totalHeader = [...container!.querySelectorAll<HTMLTableCellElement>(
+      '.development-results th',
+    )].find((h) => h.textContent?.startsWith('总资源'))!
+    totalHeader.click()
+    await flush()
+
+    // 数值升序。若按字符串排会得到 ['100','100','81']。
+    expect(readTotals()).toEqual(['81', '100', '100'])
+  })
+
+  it('改选装备会把排序状态复位回默认顺序', async () => {
+    const rows = await showTwoResults()
+    const fuelHeader = [...container!.querySelectorAll<HTMLTableCellElement>(
+      '.development-results th',
+    )].find((h) => h.textContent?.startsWith('油'))!
+    fuelHeader.click()
+    await flush()
+    expect(fuelHeader.getAttribute('aria-sort')).toBe('ascending')
+
+    // 取消选择再重新选中 —— 参考实现在改选装备时会清掉排序器
+    const button = container!.querySelector<HTMLButtonElement>('.equipment-buttons button')!
+    button.click()
+    await flush()
+    button.click()
+    await flush()
+
+    const headers = [...container!.querySelectorAll<HTMLTableCellElement>(
+      '.development-results th',
+    )]
+    expect(headers.every((h) => h.getAttribute('aria-sort') === 'none')).toBe(true)
+    const now = container!.querySelectorAll<HTMLTableRowElement>('.development-results tbody tr')
+    expect(now[0].querySelectorAll('td')[1].textContent).toBe('30')  // 回到默认顺序
+    expect(rows.length).toBe(2)
+  })
+
+  it('方向键与点击走同一条应用路径', async () => {
+    const rows = await showTwoResults()
+    const fuelInput = container!.querySelector<HTMLInputElement>('#fuel')!
+    expect(fuelInput.value).toBe('30')
+
+    rows[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    )
+    await flush()
+    expect(fuelInput.value).toBe('10')          // 已切到第二行的公式
+    expect(rows[1].classList.contains('result-selected')).toBe(true)
+
+    rows[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    await flush()
+    expect(fuelInput.value).toBe('30')
+    expect(rows[0].classList.contains('result-selected')).toBe(true)
+  })
+})

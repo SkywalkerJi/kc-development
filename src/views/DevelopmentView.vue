@@ -43,7 +43,7 @@
               @input="onResourceInput(0, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 0)"
-              @blur="normalizeResource(0)">
+              @blur="normalizeResource(0, $event)">
           </div>
 
           <div class="resource-group">
@@ -52,7 +52,7 @@
               @input="onResourceInput(1, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 1)"
-              @blur="normalizeResource(1)">
+              @blur="normalizeResource(1, $event)">
           </div>
 
           <div class="resource-group">
@@ -61,7 +61,7 @@
               @input="onResourceInput(2, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 2)"
-              @blur="normalizeResource(2)">
+              @blur="normalizeResource(2, $event)">
           </div>
 
           <div class="resource-group">
@@ -70,7 +70,7 @@
               @input="onResourceInput(3, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 3)"
-              @blur="normalizeResource(3)">
+              @blur="normalizeResource(3, $event)">
           </div>
         </div>
         
@@ -142,10 +142,18 @@
                   <td>0%</td>
                   <td></td>
                 </tr>
+                <!--
+                  出货率列与另外三组一样走 getEquipRate，**不能**写死 "0%"：
+                  参考实现在分组之前就为每一件装备算好了逐池明细串，本组的行
+                  同样带着它。本组的特征是「合计为 0」，不是「明细为 0」——
+                  典型形态是 2%-2%、4%-2%-2% 这种正负相抵的叠加过程，恰恰是
+                  这一组存在的理由（哪个池加了、哪个池又把它减没了）。
+                  上面组头的 "0%" 则是对的，参考实现那里就是个固定字符串。
+                -->
                 <tr v-for="equip in replacedEquipments" :key="equip.id" class="replaced-equipment">
                   <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" alt="装备图标" /></td>
                   <td>{{ equip.name }}</td>
-                  <td>0%</td>
+                  <td>{{ getEquipRate(equip.id) }}</td>
                   <td>{{ getResourceRequirement(equip) }}</td>
                 </tr>
               </template>
@@ -190,32 +198,34 @@
           <table v-if="hasSelectedEquipments">
             <thead>
               <tr>
-                <th>秘书舰</th>
-                <th>油</th>
-                <th>弹</th>
-                <th>钢</th>
-                <th>铝</th>
-                <th>总资源</th>
-                <th>池类型</th>
-                <th>出货率</th>
-                <th>失败率</th>
+                <th
+                  v-for="col in RESULT_COLUMNS"
+                  :key="col.key"
+                  class="sortable"
+                  :aria-sort="sortColumn === col.key ? (sortAsc ? 'ascending' : 'descending') : 'none'"
+                  @click="onResultHeaderClick(col.key)"
+                >
+                  {{ col.label }}<span v-if="sortColumn === col.key">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+                </th>
               </tr>
             </thead>
-            <tbody>
-              <tr 
-                v-for="(result, index) in developmentResults" 
+            <!--
+              行是一个**选择控件**，不是纯 click 靶子：参考实现这里是个列表
+              控件，「应用配方」挂在选中项变化上，所以键盘方向键同样能用，
+              而再次点选已选中的行不会触发（用户手工改过的资源不被重复覆盖）。
+              这两条语义都由 selectResultAt 的「同一行则不触发」保证。
+            -->
+            <tbody @keydown="onResultKeydown">
+              <tr
+                v-for="(result, index) in sortedResults"
                 :key="index"
-                @click="selectResult(result)"
+                tabindex="0"
+                role="row"
+                :aria-selected="index === selectedResultIndex"
+                :class="{ 'result-selected': index === selectedResultIndex }"
+                @click="selectResultAt(index)"
               >
-                <td>{{ result.池名 }}</td>
-                <td>{{ result.公式[0] }}</td>
-                <td>{{ result.公式[1] }}</td>
-                <td>{{ result.公式[2] }}</td>
-                <td>{{ result.公式[3] }}</td>
-                <td>{{ result.总资源 }}</td>
-                <td>{{ poolTypeLabel(result.池ID) }}</td>
-                <td>{{ result.出货率 }}%</td>
-                <td>{{ result.失败率 }}%</td>
+                <td v-for="col in RESULT_COLUMNS" :key="col.key">{{ col.display(result) }}</td>
               </tr>
             </tbody>
           </table>
@@ -272,28 +282,81 @@ const lastValid = ref<number[]>([10, 10, 10, 10])
 const currentPoolEquipments = ref<Record<number, number>>({})
 const equipRatesDetailMap = ref<Record<number, number[]>>({})
 const developmentResults = ref<DevelopResult[]>([])
+/** 「可用公式」表当前选中的行下标（相对 sortedResults）；null = 未选中任何行。 */
+const selectedResultIndex = ref<number | null>(null)
+/** 当前排序列的 key；null = 不排序，按 computeRecipes 产出的默认顺序展示。 */
+const sortColumn = ref<string | null>(null)
+const sortAsc = ref(true)
+
+/**
+ * 「可用公式」表的列定义 —— 表头、单元格、排序取值共用这一份，避免三处各写
+ * 一遍再逐渐对不上。
+ *
+ * `value` 供排序用，`display` 供渲染用；两者分开是因为**数值列必须按数值排**。
+ * ⚠️ 参考实现这里有个缺陷：它的列排序器从未被填充过，于是所有列都退化成
+ * 字符串比较，「总资源」会排成 101 → 121 → 90、「出货率」会排成
+ * "10%","12%","2%"。这是刻意不复刻的一处 —— 与其它「参考实现会崩/结果明显
+ * 不合理、web 修正」的地方同一处置原则。
+ */
+interface ResultColumn {
+  key: string
+  label: string
+  value: (r: DevelopResult) => number | string
+  display: (r: DevelopResult) => string
+}
+const RESULT_COLUMNS: ResultColumn[] = [
+  { key: 'pool', label: '秘书舰', value: (r) => r.池名, display: (r) => r.池名 },
+  { key: 'fuel', label: '油', value: (r) => r.公式[0], display: (r) => String(r.公式[0]) },
+  { key: 'ammo', label: '弹', value: (r) => r.公式[1], display: (r) => String(r.公式[1]) },
+  { key: 'steel', label: '钢', value: (r) => r.公式[2], display: (r) => String(r.公式[2]) },
+  { key: 'bauxite', label: '铝', value: (r) => r.公式[3], display: (r) => String(r.公式[3]) },
+  { key: 'total', label: '总资源', value: (r) => r.总资源, display: (r) => String(r.总资源) },
+  {
+    key: 'type', label: '池类型',
+    value: (r) => poolTypeLabel(r.池ID), display: (r) => poolTypeLabel(r.池ID),
+  },
+  { key: 'hit', label: '出货率', value: (r) => r.出货率, display: (r) => `${r.出货率}%` },
+  { key: 'fail', label: '失败率', value: (r) => r.失败率, display: (r) => `${r.失败率}%` },
+]
+
+/**
+ * 展示用的结果列表。未点表头时就是 computeRecipes 的默认顺序（那一份复刻了
+ * 参考实现的比较器）；点了表头才按该列重排。
+ *
+ * Array.prototype.sort 自 ES2019 起保证稳定，所以同值的行会保持默认顺序。
+ */
+const sortedResults = computed(() => {
+  const col = RESULT_COLUMNS.find((c) => c.key === sortColumn.value)
+  if (!col) return developmentResults.value
+  const dir = sortAsc.value ? 1 : -1
+  return [...developmentResults.value].sort((a, b) => {
+    const va = col.value(a)
+    const vb = col.value(b)
+    if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb)
+    return dir * String(va).localeCompare(String(vb), 'zh-Hans-CN')
+  })
+})
+
+/** 点表头：同一列切换升/降序，换列则从升序开始。 */
+function onResultHeaderClick(key: string) {
+  if (sortColumn.value === key) sortAsc.value = !sortAsc.value
+  else {
+    sortColumn.value = key
+    sortAsc.value = true
+  }
+  // 顺序变了，旧下标不再指向同一条结果
+  selectedResultIndex.value = null
+}
 // initializeData() 返回 { success: false } 时置位，模板据此不渲染依赖数据的
 // 主内容（见上面模板里的 v-if="initFailed"）。
 const initFailed = ref(false)
 
-const availablePools = computed(() => {
-  // 使用Map对相同开发池名称进行去重
-  const poolMap = new Map<string, DevelopmentPoolClass>()
-
-  pools()
-    .filter(pool =>
-      pool.开发池ID >= 0 &&
-      !pool.最低资源 &&
-      developmentStore.existPool.includes(pool.开发池名称)
-    )
-    .forEach(pool => {
-      if (!poolMap.has(pool.开发池名称)) {
-        poolMap.set(pool.开发池名称, pool)
-      }
-    })
-
-  return Array.from(poolMap.values())
-})
+// 下拉框候选池直接用 store 产出的那一份 —— 准入条件（名称未重复、非负 ID、
+// 无最低资源门槛）只在 readCtypeAndPools 里写一次。此前这里把同一套条件又
+// 重写了一遍再按名称去重，是同一份规则的第二个真值源。
+const availablePools = computed(
+  () => developmentStore.selectablePools as unknown as DevelopmentPoolClass[],
+)
 const flagshipPoolName = ref<string | null>(null)
 const flagshipMatched = computed(
   () => !flagshipPoolName.value || flagshipPoolName.value === selectedPool.value?.开发池名称,
@@ -306,9 +369,8 @@ function onFlagshipSelect(payload: { pool: DevelopmentPoolClass; shipName: strin
   )
   if (target) {
     selectedPool.value = target
+    // 只有正向路径依赖所选池，理由同 onPoolChanged
     refreshCurrentPool()
-    refreshResults()
-    refreshEnabled()
   }
 }
 
@@ -334,52 +396,38 @@ const otherEquipments = computed(() => groupedEquipments.value.other)
 const insufficientEquipments = computed(() => groupedEquipments.value.insufficient)
 const replacedEquipments = computed(() => groupedEquipments.value.replaced)
 
-// 装备分组
+/**
+ * 装备按钮的分组与顺序。
+ *
+ * ⚠️ 这里是按钮顺序的**唯一**产出点。`filterButtonList` 是个以装备 id 为键的
+ * 普通对象，而 JS 对整数样键一律按数值升序枚举、与写入顺序无关 —— 也就是说
+ * 无论 store 里以什么顺序写入，读出来都是按 id 升序。参考实现的按钮顺序是
+ * types[2] → types[3] → id，所以必须在读出之后重新排一次。
+ * 删掉下面这次 sortEquipIds 会让按钮顺序**静默**退化成按 id 升序。
+ *
+ * 排序用 core 的 sortEquipIds，不要在这里另写一份：此前的内联版本在装备查
+ * 不到时 `return 0`（把未知装备与所有装备都判为相等），破坏了比较器的传递性。
+ *
+ * 分组按 types[2] 切分。参考实现是「相邻两项 types[2] 不同就换行」，因为列表
+ * 已按 types[2] 首键排序，这与「按 types[2] 分桶后升序输出」等价。
+ */
 const equipmentGroups = computed(() => {
-  // 检查filterButtonList是否已初始化
-  if (Object.keys(developmentStore.filterButtonList).length === 0) {
-    return []
-  }
-  
-  // 按类型分组
-  const groups: Record<number, number[]> = {}
-  
-  // 获取所有装备ID并排序
-  const allEquipIds = Object.keys(developmentStore.filterButtonList).map(Number)
-  
-  // 按参考实现的排序方式：types[2] → types[3] → id
-  allEquipIds.sort((a, b) => {
-    const equipA = start2Store.equipList[a]
-    const equipB = start2Store.equipList[b]
-    
-    if (!equipA || !equipB) return 0
-    
-    if (equipA.types[2] !== equipB.types[2]) {
-      return equipA.types[2] - equipB.types[2]
-    }
-    
-    if (equipA.types[3] !== equipB.types[3]) {
-      return equipA.types[3] - equipB.types[3]
-    }
-    
-    return a - b
-  })
-  
-  // 按照types[2]分组
-  for (const equipId of allEquipIds) {
-    const equip = start2Store.equipList[equipId]
+  const ids = sortEquipIds(
+    Object.keys(developmentStore.filterButtonList).map(Number), start2Store.equipList,
+  )
+
+  const groups: number[][] = []
+  let currentType: number | null = null
+  for (const id of ids) {
+    const equip = start2Store.equipList[id]
     if (!equip) continue
-    
-    const typeId = equip.types[2]
-    if (!groups[typeId]) {
-      groups[typeId] = []
+    if (equip.types[2] !== currentType) {
+      currentType = equip.types[2]
+      groups.push([])
     }
-    
-    groups[typeId].push(equipId)
+    groups[groups.length - 1].push(id)
   }
-  
-  // 转换为数组
-  return Object.values(groups)
+  return groups
 })
 
 // 初始化数据
@@ -398,10 +446,26 @@ function refreshResults() {
   developmentResults.value = computeRecipes(
     pools(), developmentStore.existPool, targets, start2Store.equipList,
   )
+  // 列表整体换了，旧下标不再指向同一条结果，必须重置 —— 否则「同一行不重复
+  // 触发」的判断会拿旧下标去比新列表。排序状态也要一并复位：参考实现在
+  // 改选装备时会把列表控件的排序器清掉，回到默认顺序。
+  selectedResultIndex.value = null
+  sortColumn.value = null
+  sortAsc.value = true
 }
 
 function refreshEnabled() {
   const targets = developmentStore.getSelectedEquipIds()
+
+  // 没有选中任何装备 → 全部可用，直接置位。参考实现在这条分支上同样不做
+  // 任何池遍历；而 computeEnabledEquipIds 在 targets 为空时会把全部池都
+  // 走一遍（结果必然是「全部装备」），算完又被下面的判断整个丢掉。
+  if (targets.length === 0) {
+    for (const key of Object.keys(developmentStore.filterButtonList))
+      developmentStore.filterButtonList[Number(key)].enabled = true
+    return
+  }
+
   const enabled = new Set(
     computeEnabledEquipIds(
       pools(), developmentStore.existPool, targets,
@@ -409,7 +473,18 @@ function refreshEnabled() {
   )
   for (const key of Object.keys(developmentStore.filterButtonList)) {
     const id = Number(key)
-    developmentStore.filterButtonList[id].enabled = targets.length === 0 || enabled.has(id)
+    const state = developmentStore.filterButtonList[id]
+    // 参考实现只更新**未选中**的按钮，已选中的 Enabled 保持不动。
+    // 这不是小事：联合准入失败时启用集合会变成空集（真实数据下可达，
+    // 例如先选 A 再选 B，而没有任何池能同时出这两件），此时若把已选按钮
+    // 也写成 false，它们会带上 disabled 样式渲染成半透明灰态 ——
+    // 视觉上告诉用户「你刚点的目标不可用」，而参考实现里这两个按钮恰恰是
+    // 当时唯一没变灰的。
+    // 顺带保证了「已选 ⟹ enabled 为 true」这条不变式（按钮不可用就点不进来），
+    // 于是模板里 :class 的 !enabled 与 :disabled 的 !enabled && !select
+    // 不会再打架。
+    if (state.select) continue
+    state.enabled = enabled.has(id)
   }
 }
 
@@ -473,17 +548,20 @@ watch(rawResources, () => {
     return
   }
   if (!result.recompute) return
+  // 与已提交值完全相同 → 这一轮是 selectResult 那类「先同步提交、赋值再
+  // 触发一次 watcher」产生的回声，没有新信息，跳过。
+  if (result.lastValid.every((v, i) => v === committedResources.value[i])) return
   committedResources.value = result.lastValid.slice()
+  // 只重算正向路径。公式列表（computeRecipes）与按钮状态
+  // （computeEnabledEquipIds）的入参里既没有资源、也没有所选池，资源一变
+  // 它们的输出不可能变化 —— 参考实现在资源变化时同样只重算正向路径。
+  // 这两个函数都要为全部候选池重建 舰ID 集合，跑一遍并不便宜。
   refreshCurrentPool()
-  refreshResults()
-  refreshEnabled()
 }, { deep: true })
 
-// 切换池
+// 切换池：同上，公式列表与按钮状态都不依赖所选池
 function onPoolChanged() {
   refreshCurrentPool()
-  refreshResults()
-  refreshEnabled()
 }
 
 // 资源输入框类型，兼容 IME 组合输入状态标记（composing 由 compositionstart/end 维护，
@@ -528,7 +606,15 @@ function onResourceInput(index: number, event: Event) {
   if (target.composing) return
   const text = resolveResourceInputText(target.value, String(lastValid.value[index]))
   target.value = text
-  rawResources.value[index] = parseResourceInput(text)
+
+  const value = parseResourceInput(text)
+  // 空输入框是**合法的编辑中间态**：参考实现允许文本框在失焦之前处于空/非法
+  // 状态，期间既不重算、也不回填，失焦时才还原成上一个合法值。
+  // 这里保持 rawResources 不动 —— 用户能继续看到空框（DOM 上面已经写成 ''），
+  // 而算法读的仍是上一个合法值。此前的写法把空输入转成 NaN 写进去，watcher
+  // 立刻整体回退，表现成「退格到最后一个字符时输入框自己跳回原值」。
+  if (Number.isNaN(value)) return
+  rawResources.value[index] = value
 }
 
 // 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）。
@@ -546,12 +632,24 @@ function validateResource(index: number) {
 // 每个 TextBox 独立的 Leave 处理，不等其它字段一起合法）提交为
 // committedResources 并重算，不受 watch(rawResources, ...) 里 recompute
 // 门槛的限制。
-function normalizeResource(index: number) {
+function normalizeResource(index: number, event: Event) {
+  const target = event.target as HTMLInputElement
+
+  // 输入框为空 → 还原成上一个合法值，与参考实现失焦时的还原一致。
+  // 必须看 DOM 的实际文本，不能只看 rawResources：后者是数字数组，
+  // 表达不了「空」这个状态，里面存的是最后一次成功解析出的数字。
+  // （若只走 validateResource，"清空前打过 3" 会被钳成下限 10，而不是
+  // 还原成清空前那个真正合法的值。）
+  if (target.value === '') rawResources.value[index] = lastValid.value[index]
+
   validateResource(index)
+
+  // 把最终值写回 DOM。不能只靠响应式重渲染：validateResource 钳出来的值
+  // 常常与 rawResources 里原有的值相同（尤其是刚还原过），响应式不触发
+  // 更新，空框就会一直空着。
+  target.value = String(rawResources.value[index])
   committedResources.value = rawResources.value.slice()
-  refreshCurrentPool()
-  refreshResults()
-  refreshEnabled()
+  refreshCurrentPool()   // 同 watch(rawResources)：只有正向路径依赖资源
 }
 
 // 切换装备选择状态
@@ -570,11 +668,15 @@ function toggleEquipment(equipId: number) {
   refreshResults()
 
   // ⚠️ 刻意偏离参考实现：参考实现在按钮 Click 末尾只重算列表，
-  // 改资源只发生在用户主动点击结果行时（listView2_SelectedIndexChanged）。
+  // 改资源只发生在用户主动选中结果行时。
   // 这里自动应用第一条公式是本项目有意保留的交互改进，经决策确认，非移植遗漏。
   // 代价：会覆盖用户手动输入的资源值。
+  //
+  // 走 selectResultAt 而不是直接 selectResult，是为了让选中态与手动点击一致
+  // （第一行会高亮，并成为方向键的起点）。上面 refreshResults() 刚把
+  // selectedResultIndex 复位成 null，所以这一次必定触发。
   if (developmentResults.value.length > 0) {
-    selectResult(developmentResults.value[0])
+    selectResultAt(0)
   }
 }
 
@@ -592,6 +694,43 @@ function getResourceRequirement(equip: Api_EquipInfo): string {
   return out
 }
 
+/**
+ * 选中「可用公式」的第 index 行并应用它。
+ *
+ * 「同一行不重复触发」是有意复刻参考实现：那边挂的是列表控件的**选中项变化**
+ * 事件，再点已经选中的行不会触发。差别是可观测的 —— 点某行 → 手工把油改成
+ * 200 → 再点同一行：参考实现下油保持 200，而无条件触发的写法会把用户刚输入
+ * 的值（以及所选池）静默覆盖回该行的配方。
+ */
+function selectResultAt(index: number) {
+  if (index < 0 || index >= sortedResults.value.length) return
+  if (selectedResultIndex.value === index) return
+  selectedResultIndex.value = index
+  selectResult(sortedResults.value[index])
+}
+
+/** 方向键 / Home / End 在结果行之间移动选中项，与点击走同一条应用路径。 */
+function onResultKeydown(event: KeyboardEvent) {
+  const rows = (event.currentTarget as HTMLElement).children
+  const current = (event.target as HTMLElement).closest('tr')
+  if (!current) return
+  const index = [...rows].indexOf(current)
+  if (index < 0) return
+
+  const last = sortedResults.value.length - 1
+  let next: number
+  switch (event.key) {
+    case 'ArrowDown': next = Math.min(index + 1, last); break
+    case 'ArrowUp': next = Math.max(index - 1, 0); break
+    case 'Home': next = 0; break
+    case 'End': next = last; break
+    default: return
+  }
+  event.preventDefault()
+  selectResultAt(next)
+  ;(rows[next] as HTMLElement | undefined)?.focus()
+}
+
 // 选择结果
 function selectResult(result: DevelopResult) {
   // 设置所选池
@@ -600,18 +739,23 @@ function selectResult(result: DevelopResult) {
     selectedPool.value = pool
   }
 
-  // 设置资源。result.公式 来自 computeRecipes，是已知合法（整数、落在
-  // [10,300]）的配方值，rawResources 与 committedResources 同步、立即写入——
-  // 不依赖 watch(rawResources, ...) 异步生效：下面 refreshCurrentPool() 是
-  // 同步调用，若只写 rawResources，此刻 committedResources 还是旧值，会用
-  // 旧资源算出一份错误的 currentPoolEquipments。
-  rawResources.value = [...result.公式]
+  // 设置资源。committedResources 与 lastValid 必须在这里**同步**写入 ——
+  // 不能只写 rawResources 指望 watch 去提交：下面 refreshCurrentPool() 是
+  // 同步调用，而 watch 是 pre-flush（异步），那样此刻 committedResources
+  // 还是旧值，会用旧资源算出一份错误的 currentPoolEquipments。
+  //
+  // rawResources 逐项写而不是整数组替换：整数组替换必然让 deep watcher
+  // 触发一次（引用变了），逐项写在值相同时不触发。真有值变化时 watcher
+  // 仍会触发一次，但它开头那条「与已提交值相同就跳过」的判断会把这次
+  // 回声挡掉。
+  for (let i = 0; i < 4; i++)
+    if (rawResources.value[i] !== result.公式[i]) rawResources.value[i] = result.公式[i]
   committedResources.value = [...result.公式]
   lastValid.value = [...result.公式]
 
-  // 更新数据
+  // 只重算正向路径：目标装备没变，按钮状态（computeEnabledEquipIds）不会变。
+  // 参考实现点结果行时同样只重算左侧列表。
   refreshCurrentPool()
-  refreshEnabled()
 }
 
 // 获取装备图标
@@ -801,5 +945,25 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 
 .development-results tbody tr:hover {
   background-color: #f5f5f5;
+}
+
+.development-results th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.development-results th.sortable:hover {
+  background-color: #f0f0f0;
+}
+
+.development-results tbody tr.result-selected {
+  background-color: #e8f4e8;
+}
+
+/* 行可聚焦（tabindex=0）后必须有可见的焦点指示，否则键盘用户看不到自己在哪 */
+.development-results tbody tr:focus-visible {
+  outline: 2px solid #4a90d9;
+  outline-offset: -2px;
 }
 </style> 
