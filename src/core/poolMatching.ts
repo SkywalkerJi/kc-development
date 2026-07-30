@@ -15,10 +15,13 @@ export function findCompatiblePools(
   poolType: PoolType,
   resources?: Resources,
 ): DevelopmentPoolClass[] {
-  const baseIds = new Set(basePool.舰ID)
+  // 用池上缓存好的 舰ID集（见 developmentPool.ts 里字段处的说明），不要在这里
+  // 现场 new Set —— 本函数在一次反推里会被调用近百次，每次都为全部候选池重建
+  // 集合的话，一次调用要往集合里插入十几万个元素。
+  const baseIds = basePool.舰ID集
   return pools.filter((p) => {
     if (Math.abs(p.开发池ID) !== poolType) return false
-    const candidate = new Set(p.舰ID)
+    const candidate = p.舰ID集
     for (const id of baseIds) if (!candidate.has(id)) return false
     if (resources && p.最低资源)
       for (let i = 0; i < 4; i++) if (resources[i] < p.最低资源[i]) return false

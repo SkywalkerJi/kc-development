@@ -1,9 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopmentPoolData } from '@/core/types'
 import { DevelopmentPoolClass, createPools } from '@/core/developmentPool'
-import { sortEquipIds } from '@/core/grouping'
 import { validateCtypeMap, validateDevelopmentPools } from '@/core/dataSchema'
 import { useStart2Store } from './start2Store'
 import { fetchJson } from './fetchJson'
@@ -26,9 +25,38 @@ export interface FilterButtonState {
 export const useDevelopmentStore = defineStore('development', () => {
   const start2Store = useStart2Store()
 
-  const developmentPools = ref<DevelopmentPoolClass[]>([])
+  // shallowRef 而不是 ref：池在 readCtypeAndPools 末尾整体发布之后就是只读的
+  // （下面没有任何一处改动单个池对象），但 deep ref 会给 99 个池对象和它们
+  // 合计三千多项的 舰ID 数组都套上代理，池匹配里每次读元素都要过一次 Proxy
+  // 陷阱。唯一的写是整体替换（developmentPools.value = pools），shallowRef
+  // 对此照样触发更新。
+  //
+  // 若将来真的需要「就地改某个池」，不要简单改回 ref —— 那会把上面这层开销
+  // 加回来；应该改成替换整个数组（保持不可变更新的写法）。
+  const developmentPools = shallowRef<DevelopmentPoolClass[]>([])
   const ctypeMap = ref<Record<string, string>>({})
   const existPool = ref<string[]>([])
+  /**
+   * 下拉框（秘书舰类型）候选池的准入谓词。**这是这条规则的唯一定义**，
+   * existPool 与 selectablePools 都走它，不要在别处重写一遍条件。
+   * 名称去重不在这里，由调用方按池的先后顺序保证（取同名池中的第一个）。
+   */
+  const isSelectable = (p: DevelopmentPoolClass) => p.开发池ID >= 0 && !p.最低资源
+
+  /**
+   * 下拉框可选的池对象。由 developmentPools 派生，不是另存一份状态 ——
+   * 多一份需要手工保持同步的状态，比它想消除的那点重复更容易出错。
+   */
+  const selectablePools = computed(() => {
+    const seen = new Set<string>()
+    const out: DevelopmentPoolClass[] = []
+    for (const pool of developmentPools.value) {
+      if (!isSelectable(pool) || seen.has(pool.开发池名称)) continue
+      seen.add(pool.开发池名称)
+      out.push(pool)
+    }
+    return out
+  })
   const filterButtonList = ref<Record<number, FilterButtonState>>({})
 
   // ctype.json 与 DevelopmentPool.json 合并成一次原子发布：两者共同决定
@@ -75,8 +103,8 @@ export const useDevelopmentStore = defineStore('development', () => {
 
     for (const pool of pools) {
       pool.init(ctypeJson, start2Store.getIDs, start2Store.shipList)
-      // 下拉框准入三条件：名称未重复、非负 ID、无最低资源门槛
-      if (!nextExistPool.includes(pool.开发池名称) && pool.开发池ID >= 0 && !pool.最低资源)
+      // 准入条件走上面那个唯一定义的 isSelectable，这里只额外做名称去重
+      if (!nextExistPool.includes(pool.开发池名称) && isSelectable(pool))
         nextExistPool.push(pool.开发池名称)
     }
 
@@ -86,15 +114,29 @@ export const useDevelopmentStore = defineStore('development', () => {
     existPool.value = nextExistPool
   }
 
+  /**
+   * 建立装备按钮表：收录**全部**开发池（含负 ID 池、含带最低资源门槛的池）
+   * 出货率里引用过、且在 start2 装备表里查得到的装备。
+   *
+   * ⚠️ 这里**不**排序，是有意的。`filterButtonList` 是以装备 id 为键的普通
+   * 对象，JS 对整数样键一律按数值升序枚举、与写入顺序无关 —— 在这里排序
+   * 是纯粹的空操作，排完写进去、读出来还是按 id 升序。此前这里确实调了一次
+   * sortEquipIds，看起来像是「顺序在 store 里定好了」，实际毫无作用，界面
+   * 顺序全靠 DevelopmentView 的 equipmentGroups 又排了一遍才是对的。
+   *
+   * 顺序的产出点唯一地放在消费方（equipmentGroups），见那里的注释。
+   */
   function initFilterButtonList() {
     const ids = new Set<number>()
     for (const pool of developmentPools.value)
       for (const k of Object.keys(pool.出货率 ?? {})) ids.add(Number(k))
 
-    const known = [...ids].filter((id) => start2Store.equipList[id])
     const next: Record<number, FilterButtonState> = {}
-    for (const id of sortEquipIds(known, start2Store.equipList))
-      next[id] = { equipInfo: start2Store.equipList[id], select: false, enabled: true }
+    for (const id of ids) {
+      const equipInfo = start2Store.equipList[id]
+      if (!equipInfo) continue
+      next[id] = { equipInfo, select: false, enabled: true }
+    }
     filterButtonList.value = next
   }
 
@@ -115,7 +157,7 @@ export const useDevelopmentStore = defineStore('development', () => {
    */
   function setFlagship(shipId: number): { pool: DevelopmentPoolClass; shipInfo: unknown } | null {
     const candidates = developmentPools.value.filter(
-      (p) => p.开发池ID > 0 && p.舰ID.includes(shipId),
+      (p) => p.开发池ID > 0 && p.舰ID集.has(shipId),
     )
     if (!candidates.length || !start2Store.shipList[shipId]) return null
     const pool = candidates.reduce((min, cur) => (cur.舰ID.length >= min.舰ID.length ? min : cur))
@@ -177,6 +219,7 @@ export const useDevelopmentStore = defineStore('development', () => {
     developmentPools,
     ctypeMap,
     existPool,
+    selectablePools,
     filterButtonList,
     initializeData,
     toggleEquipmentSelect,
