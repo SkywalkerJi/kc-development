@@ -20,19 +20,15 @@ interface EquipLike { broken: number[] }
  * Oracle 验证了正向明细与规范化后的反推结果内容；总率聚合、实际展示顺序
  * 及 View 参数接线由独立测试承担，尚未获得同等强度的参考对拍。具体：
  *
- * - 正向对拍（tests/oracle.spec.ts「对拍：正向出货率」）只比较
- *   computePoolRates 返回值里的 details，没有比较同一个返回对象里的
- *   totals（出货率合计）。
+ * - 正向对拍现在同时比较 details 与 totals（totals 直接对着向量明细求和
+ *   校验），逐池 舰ID 也已有独立的对拍段落。
  * - 反推对拍两侧都先经 canonicalSortResults 再比较，这是有意为之——
  *   只用来屏蔽展示顺序差异、比较内容集合是否一致，不代表展示顺序本身
- *   被验证过。参考侧生成向量的 oracle/Algorithm.cs 本身在产出结果后也
- *   没有执行参考实现的排序，向量记录的顺序不等于参考实现真实展示的
- *   顺序。曾对 393 组 derive 向量诊断过 web（sortResults）原始顺序与
- *   向量记录的原始顺序，306 组不同——这不证明 web 排序错，只证明当前
- *   向量不能拿来当展示顺序的 oracle。
- * - sortResults 使用的比较器本身违反传递性（见 src/core/recipe.ts 头部
- *   注释），即使两侧用完全相同的比较器，也不能据此保证最终排列一致
- *   （比较器判为相等的元素之间顺序未定义）。
+ *   被验证过。生成向量的工具在产出结果后没有执行参考实现的排序，向量
+ *   记录的顺序不等于参考实现真实展示的顺序，无从拿它当展示顺序的 oracle。
+ * - 展示顺序（sortResults）本质上无法与参考实现逐条对齐：参考实现用的是
+ *   不稳定排序，并列元素之间它给出的顺序本身未定义。详见 recipe.ts 里
+ *   sortResults 的注释（含实测数据）。
  * - View 到这两个函数的调用点——View 传给它们的实参（pools()/selectedPool/
  *   resources、existPool/targets/equipList 等）是否正确，对拍看不到（对拍
  *   用的是 loadFixtures() 自建的数据，不经过 DevelopmentView.vue 的

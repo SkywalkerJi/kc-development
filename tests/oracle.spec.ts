@@ -15,6 +15,7 @@ interface Vectors {
   }[] }[]
   change: { pool: string; resources: number[]; poolType: number
             rates: Record<string, number[]> }[]
+  poolShipIds?: { name: string; poolId: number; shipIds: number[] }[]
 }
 
 const vectors: Vectors = JSON.parse(
@@ -83,22 +84,30 @@ describe('对拍：向量新鲜度（数据哈希）', () => {
 //   change = 45（existPool：可选中的开发池数，最低资源为空且 ID>=0）
 //          × 8（oracle 固定的资源组合数）
 //          = 360
-//   总数   = 393 + 360 = 753
+//   poolShipIds = 99（DevelopmentPool.json 的池总数，逐池一条）
+//   组合推导的总数 = 393 + 360 = 753；poolShipIds 是另一类向量（逐池 舰ID
+//   的参考真值），不参与这个总数，单独按池数锁定。
 describe('对拍：向量完整性（数量与内容锁定）', () => {
-  it('derive 固定 393 组，change 固定 360 组，总数固定 753 组', () => {
+  it('derive 固定 393 组，change 固定 360 组，poolShipIds 固定 99 组', () => {
     expect(vectors.derive.length).toBe(393)
     expect(vectors.change.length).toBe(360)
+    expect(vectors.poolShipIds?.length).toBe(99)
     expect(vectors.derive.length + vectors.change.length).toBe(753)
   })
 
   // 与上面的数量断言互补：数量不变但内容被替换/篡改时，只有这里会报警。
-  it('derive / change 的内容哈希与固化基线一致', () => {
+  // 三段都要锁 —— poolShipIds 是逐池 舰ID 的参考真值，如果只锁数量，
+  // 一份「照着某个错误实现改过」的 poolShipIds 照样能全绿。
+  it('derive / change / poolShipIds 的内容哈希与固化基线一致', () => {
     const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex')
     expect(hash(vectors.derive)).toBe(
       '98af4190c0c09da9065cb9050b7cef15fe9aa89674f680400c354d32e3aa31b7',
     )
     expect(hash(vectors.change)).toBe(
       '0425eb1f4247c7bd2f1917cd71aa824a43cb26d162f4f3e85730723fd540a710',
+    )
+    expect(hash(vectors.poolShipIds)).toBe(
+      '152cbd073ba38ab329e8a5f378644e7c04f2e5d88684ba18cb54366a6b075cb5',
     )
   })
 
@@ -189,14 +198,53 @@ describe('对拍：正向出货率', () => {
       // refreshCurrentPool 用的是同一个函数，不再在测试里重新编排一遍算法。
       // 同上，这只保证「函数体本身算对」，不保证 View 传给它的实参是对的
       // （对拍不经过 refreshCurrentPool 那几行代码）。
-      // 注意：这里只解构、只比较返回值里的 details，没有比较 totals
-      // （出货率合计）——totals 未被这份对拍覆盖。
-      const { details: mine } = computePoolRates(fx.pools, base!, res)
+      const { details: mine, totals } = computePoolRates(fx.pools, base!, res)
 
       const sortKeys = (o: Record<string, number[]>) =>
         Object.keys(o).map(Number).sort((a, b) => a - b).map(String)
       expect(sortKeys(mine)).toEqual(sortKeys(v.rates))
-      for (const k of sortKeys(mine)) expect(mine[Number(k)]).toEqual(v.rates[k])
+      for (const k of sortKeys(mine)) {
+        expect(mine[Number(k)]).toEqual(v.rates[k])
+        // totals 也直接对着向量明细求和校一遍。
+        //
+        // 曾经这里只比 details，文档据此记着一条「totals 未经对拍验证」的
+        // 已知边界。那条边界的事实前提其实不成立：totals 就是 details 的
+        // 求和（参考实现那边也是同一串值累加出来的），details 相等即蕴含
+        // totals 相等。但**光靠这条推理不足以只改文档就收工**——把
+        // computePoolRates 里的求和改成 `list.filter(v => v > 0)`，details
+        // 仍逐元素相等、这一整块仍全绿，而 totals 会静默变错。
+        // 所以把推理落成这行可重跑的断言，而不是留在注释里。
+        expect(totals[Number(k)]).toBe(v.rates[k].reduce((a, b) => a + b, 0))
+      }
+    },
+  )
+})
+
+// 逐池 舰ID 的直接对拍。
+//
+// 这一段是补给「同型舰改造链 / 舰名展开」这条路径的**直接**参考真值。此前
+// 向量里没有它，改造链只能通过 舰ID → 池兼容判定 → 出货率/公式 这条间接
+// 路径被间接约束，而实测表明这条路径极不敏感：曾经 23/99 个池的 舰ID 与
+// 参考实现不同（生产把 api_aftershipid 这个字符串字段直接当数字用，导致
+// 改造链断裂），而 753 组对拍依然全绿 —— 因为丢掉的都是改造形态，而作为
+// 其父集的按舰种/舰型筛选的池本来就包含它们，超集关系没被打破。
+//
+// 比较是**逐元素、含重复项、含顺序**的：舰ID 里刻意保留了重复项，它参与
+// 池排序（舰ID.length）与「取最窄池」的判断，去重会改变那两处的结果。
+describe('对拍：逐池 舰ID', () => {
+  it('向量记录了 poolShipIds', () => {
+    expect(vectors.poolShipIds).toBeDefined()
+    expect(vectors.poolShipIds!.length).toBe(99)
+  })
+
+  it.each((vectors.poolShipIds ?? []).map((v, i) => [i, v] as const))(
+    '第 %i 个池 %j',
+    (i, v) => {
+      const mine = fx.pools[i]
+      // 顺序必须与 DevelopmentPool.json 一致 —— 先确认在比同一个池
+      expect(mine.开发池名称).toBe(v.name)
+      expect(mine.开发池ID).toBe(v.poolId)
+      expect(mine.舰ID).toEqual(v.shipIds)
     },
   )
 })
