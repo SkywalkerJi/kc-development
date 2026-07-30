@@ -4,6 +4,30 @@ import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import { createPools, DevelopmentPoolClass } from '@/core/developmentPool'
 
+// P2-1 之后 fetchJson 会先检查 response.ok 才解析 JSON。这个文件里的 fetch
+// stub 大多是早期写的、只关心 json（偶尔 text）两个方法的最小 stub，没有
+// ok/status 字段——不逐个改写每处调用，而是在这层统一补上默认的"HTTP 200
+// 成功"字段，impl 自己返回的字段（如果显式提供）优先，用于 P2-1 的失败态测试。
+function stubFetch(
+  impl: (
+    url: string,
+  ) => Promise<{
+    json: () => Promise<unknown>
+    text?: () => Promise<string>
+    ok?: boolean
+    status?: number
+    statusText?: string
+  }>,
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const res = await impl(url)
+      return { ok: true, status: 200, statusText: 'OK', ...res }
+    }),
+  )
+}
+
 describe('developmentStore 公开接口', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
@@ -51,12 +75,9 @@ describe('initializeData 的数据加载竞态守卫', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     // 两个 JSON 端点都返回空结构，让加载链路走通而不依赖真实数据
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => ({
-        json: async () => (url.includes('ctype') ? {} : []),
-      })),
-    )
+    stubFetch(async (url: string) => ({
+      json: async () => (url.includes('ctype') ? {} : []),
+    }))
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -103,9 +124,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
   it('并发调用两次，ctype 与 DevelopmentPool 请求各只发生一次；start2Store.initializeData 也只调一次', async () => {
     let ctypeCalls = 0
     let poolCalls = 0
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) {
           ctypeCalls++
           return { json: async () => ({ '1': 'x' }) }
@@ -115,8 +134,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
           return { json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '1': 5 } }] }
         }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const start2 = useStart2Store()
     const start2Spy = vi
       .spyOn(start2, 'initializeData')
@@ -136,17 +154,14 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
   })
 
   it('成功后再次调用不会重建 filterButtonList：用户已做的装备选择不受影响', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool'))
           return {
             json: async () => [{ 开发池名称: 'x', 开发池ID: 1, 舰ID: [], 出货率: { '10': 5 } }],
           }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const start2 = useStart2Store()
     vi.spyOn(start2, 'initializeData').mockResolvedValue({ success: true, error: null })
     start2.equipList[10] = { id: 10, types: [0, 0, 0, 0] } as never
@@ -168,9 +183,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
 
   it('start2 解析失败时返回 success:false，而不是继续用空表展开开发池', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         // start2.json 返回 {}（缺 api_mst_ship 等字段），触发真实（未 mock）的
         // start2Store 解析失败路径。ctype/DevelopmentPool 这里返回的值本身在
         // 新 schema 下也不合法（空对象/空数组），但这不影响本测试要验证的东西：
@@ -182,8 +195,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
         if (url.includes('DevelopmentPool'))
           return { json: async () => [], text: async () => '[]' }
         return { json: async () => ({}), text: async () => '[]' }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     const result = await store.initializeData()
     expect(result.success).toBe(false)
@@ -195,9 +207,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
     start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
 
     let poolCalls = 0
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool')) {
           poolCalls++
@@ -205,8 +215,7 @@ describe('F3: developmentStore.initializeData 并发去重', () => {
           return { json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '1': 5 } }] }
         }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
 
     const r1 = await store.initializeData()
@@ -239,9 +248,7 @@ describe('G4: readDevelopmentPools 原子发布，不在中途失败时留下部
     start2.isReady = true
     start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool'))
           return {
@@ -251,8 +258,7 @@ describe('G4: readDevelopmentPools 原子发布，不在中途失败时留下部
             ],
           }
         return { json: async () => ({}) }
-      }),
-    )
+    })
 
     const store = useDevelopmentStore()
     // 调用前的引用，用来确认调用失败后没有被替换成任何中间状态。
@@ -284,9 +290,7 @@ describe('G4: readDevelopmentPools 原子发布，不在中途失败时留下部
     start2.isReady = true
     start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool'))
           return {
@@ -296,8 +300,7 @@ describe('G4: readDevelopmentPools 原子发布，不在中途失败时留下部
             ],
           }
         return { json: async () => ({}) }
-      }),
-    )
+    })
 
     const store = useDevelopmentStore()
     const result = await store.initializeData()
@@ -329,14 +332,11 @@ describe('P1-3: developmentStore 的 schema 校验与原子发布集成', () => 
   it('DevelopmentPool=[]（空数组）：初始化失败，不会把空池表当成加载成功', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     stubStart2Ready()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool')) return { json: async () => [] }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     const result = await store.initializeData()
     expect(result.success).toBe(false)
@@ -347,14 +347,11 @@ describe('P1-3: developmentStore 的 schema 校验与原子发布集成', () => 
   it('DevelopmentPool=[{}]（字段全空的畸形记录）：初始化失败，不产出空名称/ID 0 的池，existPool 里不出现空字符串', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     stubStart2Ready()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool')) return { json: async () => [{}] }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     const result = await store.initializeData()
     expect(result.success).toBe(false)
@@ -369,15 +366,12 @@ describe('P1-3: developmentStore 的 schema 校验与原子发布集成', () => 
   it('ctype.json 为空对象：初始化失败', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     stubStart2Ready()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({}) }
         if (url.includes('DevelopmentPool'))
           return { json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '1': 5 } }] }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     const result = await store.initializeData()
     expect(result.success).toBe(false)
@@ -387,16 +381,13 @@ describe('P1-3: developmentStore 的 schema 校验与原子发布集成', () => 
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const start2 = stubStart2Ready()
     start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
         if (url.includes('DevelopmentPool'))
           // 999999 不存在于 start2.equipList（只有 1 号装备）
           return { json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '999999': 5 } }] }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     const result = await store.initializeData()
     expect(result.success).toBe(false)
@@ -413,16 +404,13 @@ describe('P1-3: developmentStore 的 schema 校验与原子发布集成', () => 
     const start2 = stubStart2Ready()
     start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
+    stubFetch(async (url: string) => {
         // ctype 本身完全合法。
         if (url.includes('ctype')) return { json: async () => ({ '1': '合法的新值' }) }
         // 但 DevelopmentPool 是空数组，校验失败。
         if (url.includes('DevelopmentPool')) return { json: async () => [] }
         return { json: async () => ({}) }
-      }),
-    )
+    })
     const store = useDevelopmentStore()
     store.ctypeMap = { '1': '之前已经成功过的哨兵值' }
     const ctypeMapRefBefore = store.ctypeMap
@@ -475,5 +463,64 @@ describe('setFlagship 取最窄池', () => {
       { 开发池名称: '别的', 开发池ID: 1, 舰ID: [2, 3], 出货率: {} },
     ])
     expect(s.setFlagship(1)).toBeNull()
+  })
+})
+
+// P2-1：ctype.json / DevelopmentPool.json 这两个端点此前也没有检查
+// response.ok。HTTP 500 若恰好返回结构合法的 JSON，会被当成正常数据继续走。
+describe('P2-1: HTTP 状态码检查', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('ctype.json 返回 HTTP 500，即便响应体是结构合法的 JSON，也必须拒绝', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const start2 = useStart2Store()
+    vi.spyOn(start2, 'initializeData').mockResolvedValue({ success: true, error: null })
+    start2.isReady = true
+    start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
+
+    stubFetch(async (url: string) => {
+      if (url.includes('ctype')) {
+        // 响应体本身是合法的 ctype 映射——如果不检查状态码，这次加载会被
+        // 当成成功。
+        return { ok: false, status: 500, statusText: 'Internal Server Error', json: async () => ({ '1': 'x' }) }
+      }
+      if (url.includes('DevelopmentPool'))
+        return { json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '1': 5 } }] }
+      return { json: async () => ({}) }
+    })
+    const store = useDevelopmentStore()
+    const result = await store.initializeData()
+    expect(result.success).toBe(false)
+    expect(store.ctypeMap).toEqual({})
+  })
+
+  it('DevelopmentPool.json 返回 HTTP 500，即便响应体是结构合法的 JSON，也必须拒绝，且 ctype 不会被单独发布', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const start2 = useStart2Store()
+    vi.spyOn(start2, 'initializeData').mockResolvedValue({ success: true, error: null })
+    start2.isReady = true
+    start2.equipList[1] = { id: 1, types: [0, 0, 0, 0] } as never
+
+    stubFetch(async (url: string) => {
+      if (url.includes('ctype')) return { json: async () => ({ '1': 'x' }) }
+      if (url.includes('DevelopmentPool')) {
+        return {
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          json: async () => [{ 开发池名称: 'A', 开发池ID: 1, 舰ID: [], 出货率: { '1': 5 } }],
+        }
+      }
+      return { json: async () => ({}) }
+    })
+    const store = useDevelopmentStore()
+    const result = await store.initializeData()
+    expect(result.success).toBe(false)
+    expect(store.ctypeMap).toEqual({})
+    expect(store.developmentPools).toEqual([])
   })
 })

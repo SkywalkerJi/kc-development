@@ -5,6 +5,7 @@ import { ShipInfo, SameShipClass } from '@/types/shipTypes'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import { EquipmentType3, EquipInfo } from '@/types/equipTypes'
 import { validateStart2Payload } from '@/core/dataSchema'
+import { fetchJson, assertResponseOk } from './fetchJson'
 
 /**
  * 由（已通过 validateStart2Payload 校验的）舰船列表推导同型舰分类。
@@ -114,9 +115,14 @@ export const useStart2Store = defineStore('start2', () => {
     // 的这段时间里误以为仍是就绪状态。
     isReady.value = false
     try {
-      // 使用基础路径获取start2.json
-      const response = await fetch(`${import.meta.env.BASE_URL}data/start2.json`)
-      const json = await response.json()
+      // 使用基础路径获取start2.json；fetchJson 会先检查 HTTP 状态码再解析
+      // JSON——HTTP 500 若恰好返回结构合法的 JSON（比如网关错误页），不会
+      // 被当成正常数据放过。fetchJson 返回类型是 unknown（校验前不能假设
+      // 任何形状），这里转回 any——和这个文件里其它地方处理外部 JSON 的
+      // 方式一致（比如 readShipStats(json: any)），下面紧接着的
+      // validateStart2Payload 才是真正保证形状的地方，这个 any 只是让
+      // 校验通过之后的字段访问不需要逐层写类型断言。
+      const json = (await fetchJson(`${import.meta.env.BASE_URL}data/start2.json`)) as any
 
       // schema 校验：结构性问题（顶层形状、必需字段缺失、ID 缺失/重复/
       // 不是正整数、数组长度不对等，详见 dataSchema.js 的注释）在这里
@@ -294,6 +300,10 @@ export const useStart2Store = defineStore('start2', () => {
     try {
       // 尝试直接获取文本内容
       const response = await fetch(`${import.meta.env.BASE_URL}data/abyssal_stats.json`)
+      // 这里不用 fetchJson（它内置了 .json() 解析），因为下面需要先拿到
+      // 原始文本自己 JSON.parse，用于诊断日志——但状态码检查这一步不该
+      // 因此就跳过，复用 assertResponseOk 同一套判断。
+      assertResponseOk(response, `${import.meta.env.BASE_URL}data/abyssal_stats.json`)
       const text = await response.text()
       
       console.log('已获取abyssal_stats.json文本, 长度:', text.length)

@@ -40,8 +40,28 @@ function goodStart2Payload() {
   }
 }
 
-function stubFetch(impl: (url: string) => Promise<{ json: () => Promise<unknown>; text: () => Promise<string> }>) {
-  vi.stubGlobal('fetch', vi.fn(impl))
+// P2-1 之后 fetchJson 会先检查 response.ok 才解析 JSON。这里的 impl 大多是
+// 这个文件早期写的、只关心 json/text 两个方法的最小 stub，没有 ok/status
+// 字段——不逐个改写每处调用，而是在这层统一补上默认的"HTTP 200 成功"字段，
+// impl 自己返回的字段（如果显式提供）优先，用于下面 P2-1 的失败态测试。
+function stubFetch(
+  impl: (
+    url: string,
+  ) => Promise<{
+    json: () => Promise<unknown>
+    text?: () => Promise<string>
+    ok?: boolean
+    status?: number
+    statusText?: string
+  }>,
+) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const res = await impl(url)
+      return { ok: true, status: 200, statusText: 'OK', ...res }
+    }),
+  )
 }
 
 // initializeData 并发去重：App.vue 同时挂载 DataInitializer 与 DevelopmentView，
@@ -431,5 +451,75 @@ describe('P1-2: readStart2 的 schema 校验与原子发布集成', () => {
     expect(store.equipList).toBe(equipListRefAfterSuccess)
     expect(Object.keys(store.shipList).length).toBeGreaterThan(0)
     expect(store.isReady).toBe(false)
+  })
+})
+
+// P2-1：全项目此前没有任何一处 fetch 检查 response.ok。HTTP 500 若恰好返回
+// 结构合法的 JSON（比如网关错误页被解析成 `{}`），会被当成正常数据继续走，
+// 而不是在请求层面就被拒绝。这里验证 readStart2/readAbyssalStats 都已经
+// 接入 fetchJson/assertResponseOk，状态码检查先于任何数据处理生效。
+describe('P2-1: HTTP 状态码检查', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('start2.json 返回 HTTP 500，即便响应体是结构合法的 JSON，也必须拒绝而不是当成成功数据缓存', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let start2Calls = 0
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) {
+        start2Calls++
+        // 第一次返回 HTTP 500——响应体本身是完全合法的 start2 payload，
+        // 如果不检查状态码，这次加载会被当成成功。第二次（重试）恢复正常。
+        if (start2Calls === 1) {
+          return { ok: false, status: 500, statusText: 'Internal Server Error', json: async () => goodStart2Payload(), text: async () => '[]' }
+        }
+        return { json: async () => goodStart2Payload(), text: async () => '[]' }
+      }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+    const store = useStart2Store()
+
+    // 直接调用 readStart2()（跳过 initializeData 那层会把错误信息统一改写成
+    // "基础舰船数据加载失败，无法继续"的包装），断言原始错误信息里带着
+    // HTTP 状态码，确认拒绝确实发生在状态码检查这一步，而不是别的原因。
+    await expect(store.readStart2()).rejects.toThrow(/HTTP 500/)
+    expect(store.isReady).toBe(false)
+    expect(Object.keys(store.shipList).length).toBe(0)
+    expect(start2Calls).toBe(1)
+
+    // 失败必须可重试：状态码恢复正常后，下一次调用应该成功。
+    await expect(store.initializeData()).resolves.toEqual({ success: true, error: null })
+    expect(start2Calls).toBe(2)
+    expect(store.isReady).toBe(true)
+  })
+
+  it('start2.json 返回 HTTP 404 时同样拒绝', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) {
+        return { ok: false, status: 404, statusText: 'Not Found', json: async () => goodStart2Payload(), text: async () => '[]' }
+      }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+    const store = useStart2Store()
+    await expect(store.readStart2()).rejects.toThrow(/HTTP 404/)
+  })
+
+  it('abyssal_stats.json 返回 HTTP 500 时不影响关键数据加载（该数据非致命，failure 只打日志）', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) return { json: async () => goodStart2Payload(), text: async () => '[]' }
+      if (url.includes('abyssal_stats.json'))
+        return { ok: false, status: 500, statusText: 'Internal Server Error', json: async () => ({}), text: async () => '{}' }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+    const store = useStart2Store()
+    // 关键数据（start2）本身仍然成功，深海舰船数据的 HTTP 500 被
+    // readAbyssalStats 自己的 try/catch 吞掉，不应该让整个初始化失败。
+    await expect(store.initializeData()).resolves.toEqual({ success: true, error: null })
+    expect(store.isReady).toBe(true)
   })
 })

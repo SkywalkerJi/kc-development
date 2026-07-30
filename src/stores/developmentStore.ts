@@ -6,6 +6,7 @@ import { DevelopmentPoolClass, createPools } from '@/core/developmentPool'
 import { sortEquipIds } from '@/core/grouping'
 import { validateCtypeMap, validateDevelopmentPools } from '@/core/dataSchema'
 import { useStart2Store } from './start2Store'
+import { fetchJson } from './fetchJson'
 
 function describeValidationFailure(fileName: string, errors: string[]): string {
   return (
@@ -39,15 +40,17 @@ export const useDevelopmentStore = defineStore('development', () => {
   // 才在同一个赋值块里一起发布；任何一步失败，ctypeMap/developmentPools/
   // existPool 都保持调用前的状态，不会出现新旧数据交叉污染。
   async function readCtypeAndPools() {
-    const ctypeRes = await fetch(`${import.meta.env.BASE_URL}data/ctype.json`)
-    const ctypeJson = await ctypeRes.json()
-    const ctypeValidation = validateCtypeMap(ctypeJson)
+    // fetchJson 先检查 HTTP 状态码再解析 JSON，两个端点都用它。fetchJson
+    // 返回 unknown，validateCtypeMap 校验通过后转回 Record<string, string>——
+    // 校验器本身已经保证了这个形状（键是数字字符串、值是非空字符串）。
+    const ctypeRaw = await fetchJson(`${import.meta.env.BASE_URL}data/ctype.json`)
+    const ctypeValidation = validateCtypeMap(ctypeRaw)
     if (!ctypeValidation.ok) {
       throw new Error(describeValidationFailure('ctype.json', ctypeValidation.errors))
     }
+    const ctypeJson = ctypeRaw as Record<string, string>
 
-    const poolRes = await fetch(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
-    const rawPools = await poolRes.json()
+    const rawPools = await fetchJson(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
     // 出货率 引用的装备 ID 必须真的存在于 start2——这个跨文件校验需要
     // start2Store.equipList，_initializeData 已经保证走到这里之前 start2
     // 一定就绪（isReady），equipList 可用。
