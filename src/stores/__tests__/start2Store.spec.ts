@@ -531,3 +531,41 @@ describe('P2-1: HTTP 状态码检查', () => {
     expect(store.isReady).toBe(true)
   })
 })
+
+// api_aftershipid 在真实数据里是**字符串**（如 "254"）。生产曾经写成
+// `item.api_aftershipid || 0`，把字符串原样留下——TS 声明是 number、运行时
+// 却是 string，编译期查不出来，后果是同型舰链的前向链接（`next === ship.id`
+// 这个严格相等）恒为 false，改造链整体断裂。
+//
+// 这条测试直接锁住**生产的解析**这一步：tests/helpers/loadFixtures.ts 自己
+// 做转换，所以逐池 舰ID 的对拍看不到这里；必须单独测。
+describe('start2Store：api_aftershipid 的字符串形态', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('字符串形态的 api_aftershipid 被转成数字，改造链因此能连起来', async () => {
+    // 两艘舰构成一条链：1 → 2，afterid 用真实数据里的字符串形态给出。
+    const ships = [
+      { ...VALID_SHIP, api_id: 1, api_name: '一号', api_aftershipid: '2' },
+      { ...VALID_SHIP, api_id: 2, api_name: '二号', api_aftershipid: '0' },
+    ]
+    stubFetch(async (url: string) => ({
+      json: async () =>
+        url.includes('start2') ? { ...goodStart2Payload(), api_mst_ship: ships } : [],
+      text: async () => '[]',
+    }))
+
+    setActivePinia(createPinia())
+    const store = useStart2Store()
+    await store.initializeData()
+
+    // 解析成数字，不是字符串
+    expect(typeof store.shipList[1].afterid).toBe('number')
+    expect(store.shipList[1].afterid).toBe(2)
+
+    // 链真的连起来了。若 afterid 还是字符串，两艘舰会各成一条单舰链。
+    expect(store.sameShipList.length).toBe(1)
+    expect(store.allSameShipList[1].ids).toEqual([1, 2])
+    expect(store.getIDs(['一号'], false)).toEqual([1, 2])
+    expect(store.getIDs(['二号'], false)).toEqual([2])
+  })
+})

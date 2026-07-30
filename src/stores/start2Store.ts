@@ -1,81 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Api_ShipInfo, SameShip, Api_Mst_Stype, Api_Mst_Equip_Ship, Api_Mst_Equip_Exslot_Ship } from '@/types/shipTypes'
-import { ShipInfo, SameShipClass } from '@/types/shipTypes'
+import { ShipInfo } from '@/types/shipTypes'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import { EquipmentType3, EquipInfo } from '@/types/equipTypes'
 import { validateStart2Payload } from '@/core/dataSchema'
+import { computeSameShipList, resolveShipIDs } from '@/core/sameShipList'
 import { fetchJson, assertResponseOk } from './fetchJson'
-
-/**
- * 由（已通过 validateStart2Payload 校验的）舰船列表推导同型舰分类。
- *
- * 刻意写成不依赖 store 状态的纯函数：readStart2 需要在局部变量里把整套
- * 解析结果（含同型舰分类）准备完毕后再一次性发布到 store，这个函数只是
- * 那条流水线上的一步，不直接读写任何 ref。逻辑本身是从原来直接读写
- * sameShipList.value/allSameShipList.value 的版本原样搬过来的，只是把
- * 读写对象换成了参数和返回值，不改变同型舰归类算法本身。
- */
-function computeSameShipList(
-  shipList: Record<number, Api_ShipInfo>,
-): { sameShipList: SameShip[]; allSameShipList: Record<number, SameShip> } {
-  const tempDict: Record<number, SameShip> = {}
-
-  for (const [idStr, ship] of Object.entries(shipList)) {
-    const id = parseInt(idStr)
-    if (id > 1500) continue
-
-    let found = false
-
-    for (const [, existSameShip] of Object.entries(tempDict)) {
-      if (existSameShip.next === ship.id) {
-        existSameShip.ids.push(ship.id)
-        existSameShip.next = ship.afterid
-        found = true
-
-        if (tempDict[ship.afterid]) {
-          const nextSameShip = tempDict[ship.afterid]
-          if (nextSameShip === existSameShip) continue
-
-          for (const nextId of nextSameShip.ids) {
-            existSameShip.ids.push(nextId)
-          }
-          existSameShip.next = nextSameShip.next
-          delete tempDict[ship.afterid]
-        }
-        break
-      }
-    }
-
-    if (!found) {
-      const newSameShip = new SameShipClass()
-      newSameShip.name = ship.name
-      newSameShip.ids = [ship.id]
-      newSameShip.next = ship.afterid
-
-      tempDict[ship.id] = newSameShip
-
-      if (tempDict[ship.afterid]) {
-        const nextSameShip = tempDict[ship.afterid]
-        for (const nextId of nextSameShip.ids) {
-          newSameShip.ids.push(nextId)
-        }
-        newSameShip.next = nextSameShip.next
-        delete tempDict[ship.afterid]
-      }
-    }
-  }
-
-  const sameShipList = Object.values(tempDict)
-  const allSameShipList: Record<number, SameShip> = {}
-  for (const sameShip of sameShipList) {
-    for (const id of sameShip.ids) {
-      allSameShipList[id] = sameShip
-    }
-  }
-
-  return { sameShipList, allSameShipList }
-}
 
 export const useStart2Store = defineStore('start2', () => {
   // 数据存储
@@ -149,7 +80,16 @@ export const useStart2Store = defineStore('start2', () => {
         ship.ctype = item.api_ctype
         ship.速度 = item.api_soku
         ship.舰种 = item.api_stype
-        ship.afterid = item.api_aftershipid || 0
+        // ⚠️ api_aftershipid 在真实数据里是**字符串**（如 "254"），不是数字。
+        // 参考实现读它时做了显式的整数转换，web 侧此前写的是 `x || 0`，把
+        // 字符串原样留下了 —— TS 声明是 number、运行时却是 string，编译期
+        // 查不出来。后果是 computeSameShipList 里 `next === ship.id` 这个
+        // 严格相等恒为 false，整个改造链的前向链接失效。
+        //
+        // 不要写成 `Number(...) || 0`：`|| 0` 会把 Number('abc') 的 NaN
+        // 静默吞成 0，正是上面那个 bug 的成因模式（用兜底掩盖非法字段）。
+        // 字段形态由 validateStart2Payload 负责拒绝，这里只负责转换。
+        ship.afterid = Number(item.api_aftershipid ?? 0)
 
         // 玩家舰船特殊处理
         if (id < 1500) {
@@ -553,29 +493,14 @@ export const useStart2Store = defineStore('start2', () => {
         }
       }
     } else {
-      // 同型舰匹配
-      for (const name of names) {
-        const found = Object.values(shipList.value).find(ship => ship.name === name)
-        if (!found) {
-          console.error(`游戏基础数据版本错误，请先刷新游戏: ${name}`)
-          return result
-        }
-        
-        const sameShip = allSameShipList.value[found.id]
-        if (!sameShip) continue
-        
-        let foundInList = false
-        for (const id of sameShip.ids) {
-          if (id === found.id) {
-            result.push(id)
-            foundInList = true
-          } else if (foundInList) {
-            result.push(id)
-          }
-        }
-      }
+      // 同型舰匹配：与对拍夹具共用 core/sameShipList.ts 的那一份实现。
+      // 此前这里和夹具各手抄了一份，于是「对拍全绿」只约束了夹具那一份。
+      return resolveShipIDs(
+        names, shipList.value, allSameShipList.value,
+        (name) => console.error(`游戏基础数据版本错误，请先刷新游戏: ${name}`),
+      )
     }
-    
+
     return result
   }
   
@@ -666,17 +591,14 @@ export const useStart2Store = defineStore('start2', () => {
     // 加载装备状态 - 无论深海舰船数据是否加载成功，都需要执行
     loadEquipStatus()
     
-    // 输出加载后的列表信息
-    console.log('=== 数据加载完成情况统计 ===')
-    console.log(`舰船数据: ${Object.keys(shipList.value).length}条`)
-    console.log(shipList.value)
-    console.log(`装备数据: ${Object.keys(equipList.value).length}条`)
-    console.log(equipList.value)
-    console.log(`同型舰分类: ${sameShipList.value.length}类`)
-    console.log(sameShipList.value)
-    console.log(`舰种类型: ${api_mst_stype.value.length}种`)
-    console.log(api_mst_stype.value)
-    console.log('=== 数据加载完成 ===')
+    // 只打计数，不把整张表 dump 进控制台：这些表分别有 800 舰 / 700 装备 /
+    // 300 条同型舰链，整体输出既没有可读性，被打开的 DevTools 持有后也会一直
+    // 挂着这几张表的引用。需要看内容时在断点里查，不必默认打出来。
+    console.log(
+      `数据加载完成：舰船 ${Object.keys(shipList.value).length} 条、` +
+      `装备 ${Object.keys(equipList.value).length} 条、` +
+      `同型舰 ${sameShipList.value.length} 类、舰种 ${api_mst_stype.value.length} 种`,
+    )
 
     return { success: true, error: null }
   }

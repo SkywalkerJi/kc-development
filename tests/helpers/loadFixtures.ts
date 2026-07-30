@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createPools, type DevelopmentPoolClass } from '@/core/developmentPool'
+import { computeSameShipList, resolveShipIDs } from '@/core/sameShipList'
 import type { DevelopmentPoolData } from '@/core/types'
 
 const ROOT = join(__dirname, '..', '..')
@@ -27,64 +28,25 @@ export function loadFixtures(): Fixtures {
   for (const e of start2.api_mst_slotitem)
     equipList[e.api_id] = { id: e.api_id, broken: [...e.api_broken], types: [...e.api_type] }
 
-  // 同型舰链。**必须照抄 start2Store.ts:161-225 的增量合并算法**，
-  // 不要自己写「沿 afterid 走到底」的朴素版本 —— 数据里存在改造环
-  // （宗谷 645 → 650 → 699 → 645），朴素版本对环的展开结果与生产代码不同。
-  // 该算法已实测与参考实现产出相同的表（800 舰覆盖一致，33 个开发池舰名逐个一致）。
-  interface Chain { ids: number[]; next: number }
-  const tmp: Record<number, Chain> = {}
-  const sortedShips = [...start2.api_mst_ship].sort(
-    (a: { api_id: number }, b: { api_id: number }) => a.api_id - b.api_id,
-  )
-  for (const s of sortedShips) {
-    const id: number = s.api_id
-    if (id > 1500) continue    // 照抄生产代码：是 > 1500 不是 >= 1500
-    const afterid = Number(s.api_aftershipid ?? 0)
-    let found = false
-    for (const ev of Object.values(tmp)) {
-      if (ev.next !== id) continue
-      ev.ids.push(id)
-      ev.next = afterid
-      found = true
-      const nx = tmp[afterid]
-      if (nx && nx !== ev) {
-        ev.ids.push(...nx.ids)
-        ev.next = nx.next
-        delete tmp[afterid]
-      }
-      break
+  // 同型舰链与按舰名反查，都直接 import 生产代码用的那一份
+  // （src/core/sameShipList.ts）。
+  //
+  // 此前这里手抄了一份、生产那边另有一份，于是「753 组对拍全绿」实际只
+  // 约束了**手抄的这一份** —— 生产那份写错了也测不出来。这不是假设：
+  // 生产曾把 api_aftershipid（数据里是字符串）直接当数字用，改造链断裂、
+  // 23 个开发池的 舰ID 与参考实现不同，而对拍依然全绿，正是因为这里的
+  // 手抄件恰好做了字符串转换。共用同一份实现由结构消除这类漏检。
+  //
+  // ⚠️ 不要为了「让夹具独立」再抄一份回来。夹具与生产共用实现是有意的：
+  // 对拍要验证的是生产会跑的那段代码。
+  const chainShips: Record<number, { id: number; name: string; afterid: number }> = {}
+  for (const s of start2.api_mst_ship)
+    chainShips[s.api_id] = {
+      id: s.api_id, name: s.api_name, afterid: Number(s.api_aftershipid ?? 0),
     }
-    if (!found) {
-      const fresh: Chain = { ids: [id], next: afterid }
-      tmp[id] = fresh
-      const nx = tmp[afterid]
-      if (nx && nx !== fresh) {
-        fresh.ids.push(...nx.ids)
-        fresh.next = nx.next
-        delete tmp[afterid]
-      }
-    }
-  }
-  const chainOf: Record<number, number[]> = {}
-  for (const c of Object.values(tmp))
-    for (const id of c.ids) if (!chainOf[id]) chainOf[id] = c.ids
-
-  // 取「从命中舰开始到链尾」，不含它之前的形态
-  const getIDs = (names: string[]): number[] => {
-    const out: number[] = []
-    for (const n of names) {
-      const hit = start2.api_mst_ship.find((s: { api_name: string }) => s.api_name === n)
-      if (!hit) return out
-      const chain = chainOf[hit.api_id]
-      if (!chain) continue
-      let started = false
-      for (const x of chain) {
-        if (x === hit.api_id) { out.push(x); started = true }
-        else if (started) out.push(x)
-      }
-    }
-    return out
-  }
+  const { allSameShipList } = computeSameShipList(chainShips)
+  const getIDs = (names: string[]): number[] =>
+    resolveShipIDs(names, chainShips, allSameShipList)
 
   const raw: DevelopmentPoolData[] = read('DevelopmentPool.json')
   const pools = createPools(raw)
