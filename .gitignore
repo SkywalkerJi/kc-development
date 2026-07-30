@@ -34,3 +34,6 @@ node_modules
 .vscode/
 # SDD 执行期临时产物
 .superpowers/
+
+# 本项目统一用 pnpm，不保留 npm 锁文件
+package-lock.json
