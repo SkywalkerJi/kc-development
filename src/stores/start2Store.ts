@@ -707,7 +707,15 @@ export const useStart2Store = defineStore('start2', () => {
     api_mst_equip_ship,
     api_mst_equip_exslot_ship,
     initializeData,
-    readStart2,
+    // 故意不导出 readStart2：inflight 只在失败时清空，成功一次后会永久保留
+    // 那个已 resolve 的 promise。如果 readStart2 是公开 API，外部代码可以
+    // 绕过 initializeData 的这层缓存直接调用它——它会先把 isReady 置 false，
+    // 一旦这次直接调用失败，isReady 就停在 false，但 inflight 缓存的仍是
+    // 上一次成功的 promise；调用方紧接着再调 initializeData() 会立刻拿到
+    // 那个旧的成功结果，既不会真正重试，也不会把 isReady 恢复成 true——
+    // 「已就绪缓存」与「仅用于并发去重的进行中 promise」这两个概念在这种
+    // 用法下被搅到了一起。生产代码从未直接调用过 readStart2，只保留它作为
+    // initializeData 内部使用的私有实现，彻底堵死这条路径。
     readAbyssalStats,
     readShipStats,
     loadEquipStatus,

@@ -185,29 +185,49 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
     expect(store.isReady).toBe(true)
   })
 
-  // 直接调用 readStart2()（不经 initializeData 的进行中缓存——缓存只在失败
-  // 时清空，成功一次后再调 initializeData() 会直接拿缓存结果、根本不会重新
-  // 拉取，测不出这里要验证的东西）。验证的是 readStart2 自己在"重新进入"时
-  // 会先把 isReady 复位成 false，不会沿用上一次成功时留下的 true——如果没有
-  // 这一步复位，成功一次后紧接着失败一次，isReady 会停留在过期的 true。
-  it('成功一次后紧接着失败一次：isReady 必须回到 false，不能沿用上一次成功的状态', async () => {
+  // P2-2 之后 readStart2 不再是公开 API（见 start2Store.ts 里它的导出注释），
+  // 只能通过 initializeData() 触达，而 initializeData() 成功一次后会把结果
+  // 永久缓存在 inflight 里——"先直接调用一次成功的 readStart2，再紧接着调用
+  // 一次失败的 readStart2，检查 isReady 是否正确复位"这种测法在公开 API 层面
+  // 已经不可能发生（这正是 P2-2 要修的问题：以前 readStart2 是公开导出的，
+  // 外部代码能绕过 initializeData 的缓存直接这样调用，制造出"isReady 复位
+  // 成 false、但 inflight 仍缓存着旧的成功 promise"这种不一致状态）。
+  // isReady 在"重新进入时复位、失败路径不会误置位"这些性质，已经由上面
+  // 和下面其它经 initializeData() 触发的失败/重试用例覆盖到了——那些都是
+  // "第一次尝试就失败"的场景，不需要依赖已经不存在的直接调用入口。
+  // 这里改成验证 P2-2 真正要保证的东西：readStart2 不再出现在公开接口里，
+  // 且成功一次后，哪怕后续的 start2.json 响应变成畸形数据，缓存也会完整
+  // 屏蔽掉它——不会有任何路径能让这次坏响应影响到已经就绪的状态。
+  it('P2-2: readStart2 不再是公开接口', () => {
+    setActivePinia(createPinia())
+    const store = useStart2Store() as unknown as Record<string, unknown>
+    expect(store.readStart2).toBeUndefined()
+  })
+
+  it('成功后即使 start2.json 换成畸形响应，再次调用 initializeData() 依然返回上一次成功的缓存结果，isReady 保持 true、shipList 引用不变——没有任何公开入口能让后续的坏响应影响到已就绪的状态', async () => {
     setActivePinia(createPinia())
     vi.spyOn(console, 'error').mockImplementation(() => {})
     let start2Calls = 0
     stubFetch(async (url: string) => {
       if (url.includes('start2.json')) {
         start2Calls++
+        // 第一次成功；第二次（如果真的发生了重新拉取）会是畸形数据。
         return { json: async () => (start2Calls === 1 ? goodStart2Payload() : {}), text: async () => '[]' }
       }
       return { json: async () => ({}), text: async () => '[]' }
     })
     const store = useStart2Store()
 
-    await store.readStart2()
+    await store.initializeData()
     expect(store.isReady).toBe(true)
+    const shipListRefAfterSuccess = store.shipList
 
-    await expect(store.readStart2()).rejects.toThrow()
-    expect(store.isReady).toBe(false)
+    // 再次调用：inflight 缓存常驻，不会重新拉取 start2.json，
+    // 也就不会被"第二次响应是畸形数据"这件事影响到。
+    await expect(store.initializeData()).resolves.toEqual({ success: true, error: null })
+    expect(start2Calls).toBe(1)
+    expect(store.isReady).toBe(true)
+    expect(store.shipList).toBe(shipListRefAfterSuccess)
   })
 
   it('完全解析失败（start2.json 返回 {}）时 isReady 保持 false', async () => {
@@ -423,45 +443,33 @@ describe('P1-2: readStart2 的 schema 校验与原子发布集成', () => {
     expect(store.isReady).toBe(false)
   })
 
-  it('成功一次后紧接着失败一次：shipList/equipList 等状态保持上一次成功的内容，不会被这次失败的加载清空或替换——原子发布不只保证「这次不半发布」，也保证「失败时完全不动旧数据」', async () => {
-    setActivePinia(createPinia())
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    let start2Calls = 0
-    stubFetch(async (url: string) => {
-      if (url.includes('start2.json')) {
-        start2Calls++
-        return { json: async () => (start2Calls === 1 ? goodStart2Payload() : {}), text: async () => '[]' }
-      }
-      return { json: async () => ({}), text: async () => '[]' }
-    })
-    const store = useStart2Store()
-
-    await store.readStart2()
-    const shipListRefAfterSuccess = store.shipList
-    const equipListRefAfterSuccess = store.equipList
-    expect(Object.keys(shipListRefAfterSuccess).length).toBeGreaterThan(0)
-
-    await expect(store.readStart2()).rejects.toThrow()
-    // 关键断言：失败的这次加载完全没有碰 shipList/equipList——旧代码会在
-    // 函数一开始就执行 `shipList.value = {}` 清空，哪怕这次加载最终失败，
-    // 上一次成功的数据也已经被清掉了。新代码只在原子发布块里才会替换这些
-    // ref 的值，校验失败发生在那之前，引用和内容都必须和成功时完全一致。
-    expect(store.shipList).toBe(shipListRefAfterSuccess)
-    expect(store.equipList).toBe(equipListRefAfterSuccess)
-    expect(Object.keys(store.shipList).length).toBeGreaterThan(0)
-    expect(store.isReady).toBe(false)
-  })
+  // 这里原来有一条"成功一次后紧接着直接调用一次失败的 readStart2，断言
+  // shipList/equipList 引用保持不变"的用例，验证原子发布不会让一次失败的
+  // 重新加载清空/替换掉上一次成功的数据。P2-2 之后 readStart2 不再导出，
+  // "直接调用它、绕开 initializeData 的成功缓存去制造一次新的加载尝试"
+  // 这条路径已经不存在——公开 API 层面，成功一次之后 initializeData()
+  // 根本不会再触发新的 fetch（见下面 G2 describe 里"成功后即使 start2.json
+  // 换成畸形响应…"那条用例），所以旧用例测的场景已经不可达。它验证的atomicity
+  // 性质（失败不清空/替换已发布的状态）仍然由本 describe 里"缺少
+  // api_mst_slotitem"等"第一次尝试就失败"的用例覆盖——那些走的都是
+  // initializeData() 的公开路径，不依赖已经不存在的 readStart2 导出。
 })
 
 // P2-1：全项目此前没有任何一处 fetch 检查 response.ok。HTTP 500 若恰好返回
 // 结构合法的 JSON（比如网关错误页被解析成 `{}`），会被当成正常数据继续走，
 // 而不是在请求层面就被拒绝。这里验证 readStart2/readAbyssalStats 都已经
 // 接入 fetchJson/assertResponseOk，状态码检查先于任何数据处理生效。
+//
+// 具体的错误信息内容（比如带着 "HTTP 500" 字样）已经在 fetchJson.spec.ts
+// 里直接对 fetchJson/assertResponseOk 做了断言。这里只测到 store 这一层的
+// 集成：状态码错误确实会让 initializeData() 失败、不留下部分状态、且可
+// 重试——不再重复断言具体的错误文案（P2-2 之后 readStart2 不再导出，
+// 想看到未被 _initializeData 重新包装过的原始错误信息，只能从 readStart2
+// 内部直接测，而它已经不是公开接口了）。
 describe('P2-1: HTTP 状态码检查', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('start2.json 返回 HTTP 500，即便响应体是结构合法的 JSON，也必须拒绝而不是当成成功数据缓存', async () => {
+  it('start2.json 返回 HTTP 500，即便响应体是结构合法的 JSON，也必须拒绝而不是当成成功数据缓存；失败后重试可恢复', async () => {
     setActivePinia(createPinia())
     vi.spyOn(console, 'error').mockImplementation(() => {})
     let start2Calls = 0
@@ -479,10 +487,7 @@ describe('P2-1: HTTP 状态码检查', () => {
     })
     const store = useStart2Store()
 
-    // 直接调用 readStart2()（跳过 initializeData 那层会把错误信息统一改写成
-    // "基础舰船数据加载失败，无法继续"的包装），断言原始错误信息里带着
-    // HTTP 状态码，确认拒绝确实发生在状态码检查这一步，而不是别的原因。
-    await expect(store.readStart2()).rejects.toThrow(/HTTP 500/)
+    await expect(store.initializeData()).rejects.toThrow()
     expect(store.isReady).toBe(false)
     expect(Object.keys(store.shipList).length).toBe(0)
     expect(start2Calls).toBe(1)
@@ -503,7 +508,7 @@ describe('P2-1: HTTP 状态码检查', () => {
       return { json: async () => ({}), text: async () => '[]' }
     })
     const store = useStart2Store()
-    await expect(store.readStart2()).rejects.toThrow(/HTTP 404/)
+    await expect(store.initializeData()).rejects.toThrow()
   })
 
   it('abyssal_stats.json 返回 HTTP 500 时不影响关键数据加载（该数据非致命，failure 只打日志）', async () => {
