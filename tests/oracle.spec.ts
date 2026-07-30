@@ -137,6 +137,16 @@ describe('对拍：向量完整性（数量与内容锁定）', () => {
 // 实参传给这个函数，对拍看不到（详见 src/core/orchestration.ts 顶部的说明）。
 // canonicalSortResults 只用来把两侧都归一化到确定全序以便逐条比较，
 // 不影响 computeRecipes 内部已经产出的（sortResults）展示顺序。
+//
+// 这个归一化是有意屏蔽展示顺序差异——只验证「结果集合内容一致」，不验证
+// 「展示顺序一致」。展示顺序（sortResults）没有被这份对拍验证过：生成
+// 向量的 oracle/Algorithm.cs 本身在产出结果后也没有执行参考实现的排序，
+// 向量记录的顺序不是参考实现真实的展示顺序，没法拿来当展示顺序的 oracle。
+// 曾诊断过 393 组 derive 向量：web 用 sortResults 得到的原始顺序与向量
+// 记录的原始顺序，306 组不同——这不是「web 排序错」的证据，而是「当前
+// 向量不能证明展示顺序对不对」的证据。sortResults 的比较器本身违反
+// 传递性（见 src/core/recipe.ts 头部注释），即使两侧用相同比较器也不能
+// 据此保证最终排列一致。
 function derive(targets: number[]): DevelopResult[] {
   return canonicalSortResults(computeRecipes(fx.pools, fx.existPool, targets, fx.equipList))
 }
@@ -179,6 +189,8 @@ describe('对拍：正向出货率', () => {
       // refreshCurrentPool 用的是同一个函数，不再在测试里重新编排一遍算法。
       // 同上，这只保证「函数体本身算对」，不保证 View 传给它的实参是对的
       // （对拍不经过 refreshCurrentPool 那几行代码）。
+      // 注意：这里只解构、只比较返回值里的 details，没有比较 totals
+      // （出货率合计）——totals 未被这份对拍覆盖。
       const { details: mine } = computePoolRates(fx.pools, base!, res)
 
       const sortKeys = (o: Record<string, number[]>) =>

@@ -15,12 +15,29 @@ interface EquipLike { broken: number[] }
  * 排序、准入判断这些环节——现在两处调用点都指向本文件，对拍与生产共用
  * 同一对编排函数（computePoolRates / computeRecipes）。
  *
- * 准确说明覆盖边界：对拍能保证「这两个函数体本身算对」，但不覆盖
- * View 到这两个函数的调用点——View 传给它们的实参（pools()/selectedPool/
- * resources、existPool/targets/equipList 等）是否正确，对拍看不到（对拍
- * 用的是 loadFixtures() 自建的数据，不经过 DevelopmentView.vue 的
- * refreshCurrentPool/refreshResults 那几行代码）。实测：只改 View 调用点
- * 的传参（不改这两个函数本身），对拍 753 组仍然全绿。
+ * 准确说明覆盖边界（不要在此基础上继续放大结论）：
+ *
+ * Oracle 验证了正向明细与规范化后的反推结果内容；总率聚合、实际展示顺序
+ * 及 View 参数接线由独立测试承担，尚未获得同等强度的参考对拍。具体：
+ *
+ * - 正向对拍（tests/oracle.spec.ts「对拍：正向出货率」）只比较
+ *   computePoolRates 返回值里的 details，没有比较同一个返回对象里的
+ *   totals（出货率合计）。
+ * - 反推对拍两侧都先经 canonicalSortResults 再比较，这是有意为之——
+ *   只用来屏蔽展示顺序差异、比较内容集合是否一致，不代表展示顺序本身
+ *   被验证过。参考侧生成向量的 oracle/Algorithm.cs 本身在产出结果后也
+ *   没有执行参考实现的排序，向量记录的顺序不等于参考实现真实展示的
+ *   顺序。曾对 393 组 derive 向量诊断过 web（sortResults）原始顺序与
+ *   向量记录的原始顺序，306 组不同——这不证明 web 排序错，只证明当前
+ *   向量不能拿来当展示顺序的 oracle。
+ * - sortResults 使用的比较器本身违反传递性（见 src/core/recipe.ts 头部
+ *   注释），即使两侧用完全相同的比较器，也不能据此保证最终排列一致
+ *   （比较器判为相等的元素之间顺序未定义）。
+ * - View 到这两个函数的调用点——View 传给它们的实参（pools()/selectedPool/
+ *   resources、existPool/targets/equipList 等）是否正确，对拍看不到（对拍
+ *   用的是 loadFixtures() 自建的数据，不经过 DevelopmentView.vue 的
+ *   refreshCurrentPool/refreshResults 那几行代码）。实测：只改 View 调用点
+ *   的传参（不改这两个函数本身），对拍 753 组仍然全绿。
  *
  * `src/views/__tests__/DevelopmentView.spec.ts` 用真实 SFC 挂载（不依赖
  * @vue/test-utils，见其文件头注释）补上了这条缺口里的一部分：committedResources
