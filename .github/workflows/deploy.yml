@@ -29,10 +29,15 @@ jobs:
       - name: 设置pnpm
         uses: pnpm/action-setup@v4
 
+      # Node 22：jsdom@30 声明 engines 为 ^22.22.2 || ^24.15.0 || >=26.0.0，
+      # 它依赖的 undici@8 会调用 Node 22 才有的 webidl.util.markAsUncloneable。
+      # 用 Node 20 时 jsdom 一加载就抛 TypeError，DevelopmentView 的 SFC 挂载测试
+      # 整个文件无法运行（表现为 16/17 文件通过、少 4 条测试）。
+      # 版本要求同时写进了 package.json 的 engines，两处需保持一致。
       - name: 设置Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'pnpm'
 
       # --frozen-lockfile：锁文件与 package.json 不一致时直接失败，
