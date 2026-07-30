@@ -135,8 +135,11 @@ describe('resolveResourceInputText — 残留1：一次性写入的非法字符�
 // 测试里用真实的 Vue ref/watch **复刻**出来的一份接线，不是 DevelopmentView.vue
 // 里那个 watch 本身——sanitizeResourceInput/parseResourceInput/
 // resolveResourceInputText/applyResourceChange 都是真实生产代码，但"View 是否
-// 真的这样接线调用它们"这件事，这份测试测不出来（需要挂载组件的测试，
-// 本次未引入相关依赖）。
+// 真的这样接线调用它们"这件事，这份测试测不出来。这条缺口现在有
+// src/views/__tests__/DevelopmentView.spec.ts 用真实 SFC 挂载去覆盖（越界
+// 输入不提交 committedResources、不影响分组结果）；但那份测试关注的是
+// rawResources/committedResources 这一层拆分是否接对，不是这里逐字符/粘贴
+// 输入清洗的每一种畸形形态，两份测试分工不同，不是互相替代的关系。
 describe('G1：原始输入 → 清洗 → 算法，全链路验证「不会以非整数或截断值进入算法」', () => {
   function makeInputHarness() {
     const resources = ref<number[]>([10, 10, 10, 10])

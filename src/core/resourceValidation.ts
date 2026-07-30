@@ -8,7 +8,7 @@
  * 整数形式）；`"0x64"` 被转成 0；`"100abc"` 被静默截断成 100。这一层完全看不到
  * 原始字符串，自然拦不住这些形式。因此非法形式必须在**输入阶段**（拿到原始
  * 字符串的那一刻）就被吃掉，见下面的 `sanitizeResourceInput`；`Number.isInteger`
- * 只作为这之后的第二层防御（防的是绕过输入框直接写 resources 的情况）。
+ * 只作为这之后的第二层防御（防的是绕过输入框直接写 rawResources 的情况）。
  */
 
 /**
@@ -18,7 +18,7 @@
  * 用在文本输入框的 `@input` 上，配合 `type="text" inputmode="numeric"`（放弃
  * `type="number"` + `v-model.number`，那条链路的转换发生在拿到值之前，已经
  * 来不及拦截）。这样非法形式在用户输入的当下就被剥离，不会以任何形态进入
- * 后续的 resources 数组——不是「解析失败回退」，而是「根本打不出这些字符」。
+ * 后续的 rawResources 数组——不是「解析失败回退」，而是「根本打不出这些字符」。
  *
  * 边界：这是纯字符级过滤，不做数值语义判断。超长数字串（比如粘贴 20 位数字）
  * 会被完整保留、转换为一个精度可能失真的超大整数——失焦时的 `validateResourceValue`
@@ -43,7 +43,7 @@ export function parseResourceInput(sanitized: string): number {
 
 /**
  * 决定一次 `@input` 事件的原始文本，最终应该被当成「用户实际打出来的文本」
- * 来处理——同时驱动"该往输入框里显示什么"和"该往 resources 里写什么数值"
+ * 来处理——同时驱动"该往输入框里显示什么"和"该往 rawResources 里写什么数值"
  * 这两件事，两者由同一次判断产出，不会互相脱节。
  *
  * `sanitizeResourceInput` 是**剥离**语义：逐字符输入时这没问题——非法字符
@@ -79,8 +79,8 @@ export function validateResourceValue(value: number, lastValid: number): number 
 
 export interface ResourceChangeResult {
   /**
-   * 非 null 时表示本轮存在非整数项，需要把 resources 整体替换为此值（已回退）；
-   * 调用方应只在此时重新赋值 resources，并直接返回、不重算。
+   * 非 null 时表示本轮存在非整数项，需要把 rawResources 整体替换为此值（已回退）；
+   * 调用方应只在此时重新赋值 rawResources，并直接返回、不提交 committedResources。
    */
   revertedResources: number[] | null
   /**
@@ -91,37 +91,50 @@ export interface ResourceChangeResult {
    */
   lastValid: number[]
   /**
-   * 本轮是否应该继续跑重算。只有"全部是整数、且全部落在 [10,300] 内"才为
-   * true；存在非整数项、或存在越界整数项，都是 false——区别只在于前者会把
-   * resources 整体回退（`revertedResources` 非 null），后者保持 resources
-   * 原样、只是不重算（`revertedResources` 仍是 null，调用方不应替换
-   * resources，只是跳过这一轮的重算）。
+   * 本轮是否应该把 rawResources 提交为 committedResources 并继续跑重算。
+   * 只有"全部是整数、且全部落在 [10,300] 内"才为 true；存在非整数项、或存在
+   * 越界整数项，都是 false——区别只在于前者会把 rawResources 整体回退
+   * （`revertedResources` 非 null），后者保持 rawResources 原样、只是不提交
+   * 也不重算（`revertedResources` 仍是 null，调用方不应替换 rawResources，
+   * 也不应写 committedResources，只是跳过这一轮）。
    */
   recompute: boolean
 }
 
 /**
- * `watch(resources, ...)` 是 deep 的、且直接进算法。输入框现在先经过
- * `sanitizeResourceInput`/`resolveResourceInputText` + `parseResourceInput`
- * 才写进 resources，正常输入路径下这里几乎不会再拿到非整数——但空输入会
- * 转成 NaN 写进来，且这个函数本身不依赖「值一定来自输入框」（resources 也
- * 可能被别处直接整体替换，比如 `selectResult` 应用配方结果），所以这道
- * 整数判断作为第二层防御继续保留，不因为输入框已经做了字符级过滤就可以去掉。
+ * `watch(rawResources, ...)` 是 deep 的。这个函数决定「这一轮变化该不该把
+ * rawResources 提交为 committedResources（被 groupedEquipments/
+ * refreshCurrentPool 等实际读取的那个状态）」，而不是只决定「该不该调用
+ * refresh*()」——早前的实现只做后者，结果 `groupedEquipments` 这类直接依赖
+ * 资源 ref 的 computed 完全绕过了这道门禁，watch 没调 refresh*() 不代表
+ * computed 没有用越界值重新算过一遍。现在越界值在结构上就不会被写进
+ * committedResources，读它的 computed 自然拿不到越界值，不需要在下游各处
+ * 再设卡。
+ *
+ * 输入框现在先经过 `sanitizeResourceInput`/`resolveResourceInputText` +
+ * `parseResourceInput` 才写进 rawResources，正常输入路径下这里几乎不会再
+ * 拿到非整数——但空输入会转成 NaN 写进来，且这个函数本身不依赖「值一定来自
+ * 输入框」（rawResources 也可能被别处直接整体替换，比如 `selectResult`
+ * 应用配方结果），所以这道整数判断作为第二层防御继续保留，不因为输入框
+ * 已经做了字符级过滤就可以去掉。
  *
  * 越界但仍是整数的值（比如刚打完的 "500"，还没失焦）**不会**被回退、也
- * **不会**被拒绝显示——用户能继续看到自己打的 "500"；但也不会立刻用这个
- * 越界值触发一次重算，算法结果保持上一次的样子，直到失焦时
- * `validateResourceValue` 把它夹回 [10,300] 再重算（View 里失焦对应的
- * `normalizeResource` 是无条件重算的，不受这里 `recompute` 门槛影响——
- * "输入过程中越界不重算、失焦才夹紧并无条件重算"这两条时机各自独立，
- * 不要把失焦路径也改成越界不重算）。
+ * **不会**被拒绝显示——用户能继续看到自己打的 "500"（模板绑的是
+ * rawResources）；但也不会被提交为 committedResources，更不会用这个越界值
+ * 触发一次重算，算法结果保持上一次的样子，直到失焦时
+ * `validateResourceValue` 把它夹回 [10,300]、`normalizeResource` 无条件
+ * 提交并重算（不受这里 `recompute` 门槛影响——"输入过程中越界不提交不重算、
+ * 失焦才夹紧并无条件提交重算"这两条时机各自独立，不要把失焦路径也改成
+ * 越界不提交）。
  *
- * 因此把「这一轮该不该重算」做成显式返回值：
- * - 存在非整数项：整体回退到上一个合法值、且本轮不重算——回退这一步本身
- *   会再触发一次 watch，用纠正后的整数值重算。
- * - 全部是整数但存在越界项：不回退（resources 保持原样、用户能看到自己打的
- *   越界数字）、不推进 lastValid、且本轮不重算。
- * - 全部是整数且全部落在 [10,300] 内：推进 lastValid 并允许重算。
+ * 因此把「这一轮该不该提交并重算」做成显式返回值：
+ * - 存在非整数项：整体回退 rawResources 到上一个合法值、且本轮不提交不
+ *   重算——回退这一步本身会再触发一次 watch，用纠正后的整数值重新判断。
+ * - 全部是整数但存在越界项：不回退（rawResources 保持原样、用户能看到自己
+ *   打的越界数字）、不推进 lastValid、且本轮不提交 committedResources、
+ *   不重算。
+ * - 全部是整数且全部落在 [10,300] 内：推进 lastValid、允许调用方把这个值
+ *   提交为 committedResources 并重算。
  */
 export function applyResourceChange(
   current: readonly number[],

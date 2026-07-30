@@ -39,7 +39,7 @@
         <div class="resource-inputs">
           <div class="resource-group">
             <label for="fuel">油</label>
-            <input id="fuel" type="text" inputmode="numeric" :value="resources[0]"
+            <input id="fuel" type="text" inputmode="numeric" :value="rawResources[0]"
               @input="onResourceInput(0, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 0)"
@@ -48,7 +48,7 @@
 
           <div class="resource-group">
             <label for="ammo">弹</label>
-            <input id="ammo" type="text" inputmode="numeric" :value="resources[1]"
+            <input id="ammo" type="text" inputmode="numeric" :value="rawResources[1]"
               @input="onResourceInput(1, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 1)"
@@ -57,7 +57,7 @@
 
           <div class="resource-group">
             <label for="steel">钢</label>
-            <input id="steel" type="text" inputmode="numeric" :value="resources[2]"
+            <input id="steel" type="text" inputmode="numeric" :value="rawResources[2]"
               @input="onResourceInput(2, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 2)"
@@ -66,7 +66,7 @@
 
           <div class="resource-group">
             <label for="bauxite">铝</label>
-            <input id="bauxite" type="text" inputmode="numeric" :value="resources[3]"
+            <input id="bauxite" type="text" inputmode="numeric" :value="rawResources[3]"
               @input="onResourceInput(3, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 3)"
@@ -256,7 +256,17 @@ const pools = () => developmentStore.developmentPools as unknown as DevelopmentP
 
 // 状态数据
 const selectedPool = ref<DevelopmentPoolClass | null>(null)
-const resources = ref<number[]>([10, 10, 10, 10])
+// 拆分「输入框原始值」与「已提交的合法资源」，理由见下面 watch(rawResources, ...)
+// 前的大段注释：computed（groupedEquipments）依赖 resources.value 时，watch 门禁
+// 只能拦住"要不要调用 refresh*()"，拦不住 computed 自己重算——越界值必须在结构上
+// 就到不了被 computed/refresh* 读取的那个状态，而不是在下游设卡。
+//
+// - rawResources：输入框里正在编辑的原始值，只被模板的 input 读写（onResourceInput/
+//   validateResource），可以短暂越界或非整数。
+// - committedResources：已通过校验的合法资源，groupedEquipments、refreshCurrentPool
+//   等全部只读这个。写入时机见 watch(rawResources, ...) 与 normalizeResource。
+const rawResources = ref<number[]>([10, 10, 10, 10])
+const committedResources = ref<number[]>([10, 10, 10, 10])
 // 上一个通过整数校验的资源值，供小数/空值输入回退时使用。
 const lastValid = ref<number[]>([10, 10, 10, 10])
 const currentPoolEquipments = ref<Record<number, number>>({})
@@ -307,13 +317,15 @@ const hasSelectedEquipments = computed(() => {
   return developmentStore.getSelectedEquipIds().length > 0
 })
 // 分组 + 各组是否应显示，一并在这里算好，模板只读现成值（不重复遍历/重复求和）。
+// 依赖 committedResources 而不是 rawResources——这是本次拆分要保证的关键点：
+// 输入框里越界但还没失焦的值不经过这里，分组结果不会被没提交的值改变。
 const groupedEquipments = computed(() => {
   const targets = new Set(developmentStore.getSelectedEquipIds())
   const ids = sortEquipIds(
     Object.keys(currentPoolEquipments.value).map(Number), start2Store.equipList,
   )
   return groupEquipmentsWithVisibility<Api_EquipInfo>(
-    ids, start2Store.equipList, currentPoolEquipments.value, resources.value, targets,
+    ids, start2Store.equipList, currentPoolEquipments.value, committedResources.value, targets,
   )
 })
 
@@ -373,7 +385,7 @@ const equipmentGroups = computed(() => {
 // 初始化数据
 function refreshCurrentPool() {
   if (!selectedPool.value) return
-  const res = resources.value as unknown as Resources
+  const res = committedResources.value as unknown as Resources
   const { totals, details } = computePoolRates(
     pools(), selectedPool.value as unknown as DevelopmentPoolClass, res,
   )
@@ -402,14 +414,17 @@ function refreshEnabled() {
 }
 
 // 初始化数据
-// 如实说明覆盖边界：initFailed 这段 onMounted 逻辑本身没有被自动化测试覆盖——
-// vitest.config.ts 的 test.environment 是 'node'，没有接入 @vitejs/plugin-vue
-// 或 @vue/test-utils，SFC 没法在测试里挂载。developmentStore.initializeData()
-// 的返回值契约（success:false 时不缓存、可重试）由 developmentStore.spec.ts
-// 覆盖到了生产代码本身；但"View 拿到 success:false 后真的会置位 initFailed、
-// 模板真的会据此不渲染主内容"这件事，目前只能靠人工核对，同 tests/oracle.spec.ts
-// 与 src/core/orchestration.ts 里记录的"View 接线未被覆盖"是同一类盲区。
-// 引入 @vue/test-utils 做组件挂载测试可以补上，本次未引入该依赖。
+// 覆盖边界：src/views/__tests__/DevelopmentView.spec.ts 现在会用 vitest.config.ts
+// 里接入的 @vitejs/plugin-vue + 按文件声明的 jsdom 环境真实挂载这个 SFC（不需要
+// @vue/test-utils，vue 自带的编译产物 + createApp().mount() 已经够用），
+// 覆盖了 groupedEquipments/refreshCurrentPool 的实参接线（committedResources
+// 是否真的被正确传给 core 层函数）。但那份测试为了避免依赖真实的
+// fetch(start2.json)/fetch(DevelopmentPool.json) 等大数据文件，直接 mock 了
+// developmentStore.initializeData() 的返回值，不经过这里的 onMounted 真实调用
+// 它、也不构造 success:false 的场景——所以"View 拿到 success:false 后真的会
+// 置位 initFailed、模板真的会据此不渲染主内容"这条路径本身仍未被自动化测试
+// 覆盖，目前仍只能靠人工核对。developmentStore.initializeData() 的返回值契约
+// （success:false 时不缓存、可重试）由 developmentStore.spec.ts 覆盖到了。
 onMounted(async () => {
   // 初始化开发数据。之前这里不检查返回值，success:false 时照样往下走，
   // 用一份空的/上一次成功时的旧 developmentPools 渲染出一个看起来正常、
@@ -431,25 +446,34 @@ onMounted(async () => {
   refreshResults()
 })
 
-// 监听资源变化，更新结果。
+// 监听输入框原始值的变化，决定是否把它提交为 committedResources（→ 触发重算）。
+//
+// 这是本次拆分要保证的核心：groupedEquipments/refreshCurrentPool 等只读
+// committedResources，越界或非整数的 rawResources 在这里被挡下时，
+// committedResources 根本不会被写入新值——不是"重算函数没被调用"这种控制流
+// 层面的门禁（那挡不住 computed 依赖 rawResources 自己重算），而是数据流层面
+// 越界值压根不会出现在被依赖的那个状态里。
+//
 // 输入框的 @input（onResourceInput）已经把非数字字符剥离在先，正常输入路径下
-// 这里基本不会再拿到非整数；但 resources 也可能被别处整体替换（如 selectResult
-// 应用配方结果、或空输入被转换成的 NaN），这里仍先做一遍整数判断兜底——
-// 有非整数项就整体回退且本轮不重算（回退会再触发一次本 watcher，用纠正后的
-// 整数值重算），避免非法值在被纠正前先用错误值算出一次结果。
+// 这里基本不会再拿到非整数；但 rawResources 也可能被别处整体替换（如
+// selectResult 应用配方结果、或空输入被转换成的 NaN），这里仍先做一遍整数
+// 判断兜底——有非整数项就整体回退且本轮不提交（回退会再触发一次本 watcher，
+// 用纠正后的整数值重新判断），避免非法值在被纠正前先用错误值提交一次。
 //
 // result.recompute 为 false 且 revertedResources 为 null 时，是"全部是整数但
-// 存在越界项"（比如刚打完还没失焦的 "500"）：resources 保持原样（用户能看到
-// 自己打的 500），但不重算——重算要等失焦时 validateResourceValue 把它夹回
-// [10,300] 之后（normalizeResource 无条件重算，不受这里的 recompute 门槛影响）。
-watch(resources, () => {
-  const result = applyResourceChange(resources.value, lastValid.value)
+// 存在越界项"（比如刚打完还没失焦的 "500"）：rawResources 保持原样（用户能
+// 看到自己打的 500，因为模板绑的是 rawResources），但不写入 committedResources、
+// 也不重算——要等失焦时 normalizeResource 把它夹回 [10,300] 之后才无条件提交
+// 并重算（normalizeResource 不受这里的 recompute 门槛影响）。
+watch(rawResources, () => {
+  const result = applyResourceChange(rawResources.value, lastValid.value)
   lastValid.value = result.lastValid
   if (result.revertedResources) {
-    resources.value = result.revertedResources
+    rawResources.value = result.revertedResources
     return
   }
   if (!result.recompute) return
+  committedResources.value = result.lastValid.slice()
   refreshCurrentPool()
   refreshResults()
   refreshEnabled()
@@ -480,8 +504,8 @@ function onCompositionEnd(event: Event, index: number) {
 }
 
 // 资源输入框的 @input：从源头把非数字字符剥离掉，让 "100.0"/"1e2"/"0x64"/
-// "100abc" 这类非法形式在输入阶段就不成立，而不是等进了 resources 数组、
-// 触发一次错误重算之后再回退纠正。
+// "100abc" 这类非法形式在输入阶段就不成立，而不是等进了 rawResources 数组、
+// 触发一次错误提交之后再回退纠正。
 //
 // resolveResourceInputText 区分了两种情形（详见其定义处注释）：
 // - 逐字符键入混入单个非法字符（比如敲了一下 "."）：清洗结果等于打这个字符
@@ -489,8 +513,10 @@ function onCompositionEnd(event: Event, index: number) {
 // - 一次性写入（典型是粘贴）混入非法字符（比如粘贴 "10.5"）：不能接受剥离
 //   出来的 "105"——那是用户没打过、也不会预期的数字。这种情况整体拒绝，
 //   回退到上一个合法值，等价于"这次输入完全没有发生"。
-// 两种情形用同一次判断产出同一个文本，再据此同步写 DOM 与 resources，
-// 两者不会脱节。
+// 两种情形用同一次判断产出同一个文本，再据此同步写 DOM 与 rawResources，
+// 两者不会脱节。这里只写 rawResources，committedResources 是否推进由
+// watch(rawResources, ...) 判断，onResourceInput 本身不做校验、不直接影响
+// 任何 computed 的结果。
 //
 // 之所以手动 :value + @input 而不是 v-model：需要把最终确定的文本立即写回
 // DOM（`target.value = text`）。这里不能只依赖 Vue 的响应式重渲染来纠正
@@ -502,19 +528,27 @@ function onResourceInput(index: number, event: Event) {
   if (target.composing) return
   const text = resolveResourceInputText(target.value, String(lastValid.value[index]))
   target.value = text
-  resources.value[index] = parseResourceInput(text)
+  rawResources.value[index] = parseResourceInput(text)
 }
 
-// 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）
+// 验证资源输入（失焦时的兜底夹紧；watcher 已经把非整数拦在前面了）。
+// 只钳位 rawResources 与 lastValid 这一个 index，committedResources 的提交
+// 交给调用方 normalizeResource 统一处理。
 function validateResource(index: number) {
-  const validated = validateResourceValue(resources.value[index], lastValid.value[index])
-  resources.value[index] = validated
+  const validated = validateResourceValue(rawResources.value[index], lastValid.value[index])
+  rawResources.value[index] = validated
   lastValid.value[index] = validated
 }
 
-// 标准化资源输入（失焦时）
+// 标准化资源输入（失焦时）。
+// 复刻参考实现的 Leave：无条件把当前 rawResources（本 index 已被 validateResource
+// 钳位到 [10,300]，其余三项维持各自当前值，可能仍越界——参考实现同样按
+// 每个 TextBox 独立的 Leave 处理，不等其它字段一起合法）提交为
+// committedResources 并重算，不受 watch(rawResources, ...) 里 recompute
+// 门槛的限制。
 function normalizeResource(index: number) {
   validateResource(index)
+  committedResources.value = rawResources.value.slice()
   refreshCurrentPool()
   refreshResults()
   refreshEnabled()
@@ -566,8 +600,14 @@ function selectResult(result: DevelopResult) {
     selectedPool.value = pool
   }
 
-  // 设置资源
-  resources.value = [...result.公式]
+  // 设置资源。result.公式 来自 computeRecipes，是已知合法（整数、落在
+  // [10,300]）的配方值，rawResources 与 committedResources 同步、立即写入——
+  // 不依赖 watch(rawResources, ...) 异步生效：下面 refreshCurrentPool() 是
+  // 同步调用，若只写 rawResources，此刻 committedResources 还是旧值，会用
+  // 旧资源算出一份错误的 currentPoolEquipments。
+  rawResources.value = [...result.公式]
+  committedResources.value = [...result.公式]
+  lastValid.value = [...result.公式]
 
   // 更新数据
   refreshCurrentPool()

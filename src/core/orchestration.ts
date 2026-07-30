@@ -20,9 +20,15 @@ interface EquipLike { broken: number[] }
  * resources、existPool/targets/equipList 等）是否正确，对拍看不到（对拍
  * 用的是 loadFixtures() 自建的数据，不经过 DevelopmentView.vue 的
  * refreshCurrentPool/refreshResults 那几行代码）。实测：只改 View 调用点
- * 的传参（不改这两个函数本身），对拍 753 组仍然全绿——这条覆盖缺口需要
- * 挂载组件的测试（如 @vue/test-utils）才能补上，本次未引入该依赖，
- * 见 tests/oracle.spec.ts 顶部对应的说明。
+ * 的传参（不改这两个函数本身），对拍 753 组仍然全绿。
+ *
+ * `src/views/__tests__/DevelopmentView.spec.ts` 用真实 SFC 挂载（不依赖
+ * @vue/test-utils，见其文件头注释）补上了这条缺口里的一部分：committedResources
+ * 是否被正确传给 groupedEquipments/computePoolRates（即本文件 resources 这个
+ * 参数）现在有可复现的挂载测试锁定。但 pools()/selectedPool/existPool/
+ * targets/equipList 等其余实参传递是否正确，那份测试没有覆盖，仍是同一类
+ * 盲区——整条「View 调用点传参」的覆盖缺口没有被完全补上，只是 resources
+ * 这一项不再是盲区。见 tests/oracle.spec.ts 顶部对应的说明。
  *
  * 零 Vue/Pinia 依赖：入参、返回值全是普通数据结构。
  */
