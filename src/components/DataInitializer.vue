@@ -66,9 +66,8 @@ onMounted(async () => {
         loadingSteps.value[2].completed = true
         
         // 显示开发池数据加载结果
+        // 同 start2Store：只打计数，不 dump 整个池数组
         console.log(`加载了 ${developmentStore.developmentPools.length} 条开发池数据`)
-        console.log('开发池详细内容:')
-        console.log(developmentStore.developmentPools)
         
         if (!devResult.success) {
           hasErrors.value = true
