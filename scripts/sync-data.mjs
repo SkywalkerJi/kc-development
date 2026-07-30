@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stripJsonComments } from './stripJsonComments.mjs'
+import { validate } from './syncDataValidate.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DEST = join(ROOT, 'public', 'data')
@@ -21,28 +22,6 @@ if (!SRC) {
 function load(path) {
   const raw = readFileSync(path, 'utf8').replace(/^\uFEFF/, '')
   return JSON.parse(stripJsonComments(raw))
-}
-
-function validate(pools, start2, ctype) {
-  const errors = []
-  const equipIds = new Set(start2.api_mst_slotitem.map((e) => e.api_id))
-  const VALID_POOL_IDS = new Set([-2, -1, 1, 2, 3])
-
-  pools.forEach((p, idx) => {
-    if (typeof p.开发池名称 !== 'string' || !p.开发池名称)
-      errors.push(`第 ${idx} 项缺少 开发池名称`)
-    if (!VALID_POOL_IDS.has(p.开发池ID))
-      errors.push(`${p.开发池名称}: 开发池ID ${p.开发池ID} 不在 {-2,-1,1,2,3} 内`)
-    if (!p.出货率 || typeof p.出货率 !== 'object')
-      errors.push(`${p.开发池名称}: 缺少 出货率`)
-    else
-      for (const k of Object.keys(p.出货率))
-        if (!equipIds.has(Number(k)))
-          errors.push(`${p.开发池名称}: 装备 ${k} 不存在于 start2`)
-  })
-
-  if (Object.keys(ctype).length === 0) errors.push('ctype.json 为空')
-  return errors
 }
 
 function summarize(name, before, after, keyOf) {

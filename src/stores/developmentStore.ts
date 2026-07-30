@@ -4,7 +4,16 @@ import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopmentPoolData } from '@/core/types'
 import { DevelopmentPoolClass, createPools } from '@/core/developmentPool'
 import { sortEquipIds } from '@/core/grouping'
+import { validateCtypeMap, validateDevelopmentPools } from '@/core/dataSchema'
 import { useStart2Store } from './start2Store'
+
+function describeValidationFailure(fileName: string, errors: string[]): string {
+  return (
+    `${fileName} 数据校验失败（共 ${errors.length} 项）：\n` +
+    errors.slice(0, 20).join('\n') +
+    (errors.length > 20 ? `\n...另有 ${errors.length - 20} 条` : '')
+  )
+}
 
 export interface FilterButtonState {
   equipInfo: Api_EquipInfo
@@ -21,14 +30,32 @@ export const useDevelopmentStore = defineStore('development', () => {
   const existPool = ref<string[]>([])
   const filterButtonList = ref<Record<number, FilterButtonState>>({})
 
-  async function readCtypeData() {
-    const res = await fetch(`${import.meta.env.BASE_URL}data/ctype.json`)
-    ctypeMap.value = await res.json()
-  }
+  // ctype.json 与 DevelopmentPool.json 合并成一次原子发布：两者共同决定
+  // developmentPools 的 text（描述）与 existPool（下拉框选项），分开发布的话
+  // 会出现"pool 用的是这次的新 ctype，但 ctypeMap.value 还没来得及更新"或者
+  // 反过来的窗口期；且如果 ctype 校验通过、pool 校验失败（或反之），旧代码
+  // 会把先校验通过的那一半写进 store，就着"一份新、一份旧"的不一致组合继续
+  // 运行。这里改成两者都通过各自的 schema 校验、pool 也全部 init() 成功后，
+  // 才在同一个赋值块里一起发布；任何一步失败，ctypeMap/developmentPools/
+  // existPool 都保持调用前的状态，不会出现新旧数据交叉污染。
+  async function readCtypeAndPools() {
+    const ctypeRes = await fetch(`${import.meta.env.BASE_URL}data/ctype.json`)
+    const ctypeJson = await ctypeRes.json()
+    const ctypeValidation = validateCtypeMap(ctypeJson)
+    if (!ctypeValidation.ok) {
+      throw new Error(describeValidationFailure('ctype.json', ctypeValidation.errors))
+    }
 
-  async function readDevelopmentPools() {
-    const res = await fetch(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
-    const raw: DevelopmentPoolData[] = await res.json()
+    const poolRes = await fetch(`${import.meta.env.BASE_URL}data/DevelopmentPool.json`)
+    const rawPools = await poolRes.json()
+    // 出货率 引用的装备 ID 必须真的存在于 start2——这个跨文件校验需要
+    // start2Store.equipList，_initializeData 已经保证走到这里之前 start2
+    // 一定就绪（isReady），equipList 可用。
+    const validEquipIds = new Set(Object.keys(start2Store.equipList).map(Number))
+    const poolValidation = validateDevelopmentPools(rawPools, validEquipIds)
+    if (!poolValidation.ok) {
+      throw new Error(describeValidationFailure('DevelopmentPool.json', poolValidation.errors))
+    }
 
     // 先在局部变量里把所有池跑完 init()，全部成功后才一次性发布到
     // developmentPools/existPool 这两个响应式状态。不能像之前那样先把
@@ -40,16 +67,18 @@ export const useDevelopmentStore = defineStore('development', () => {
     // 局部变量在这里只是普通对象，函数中途抛错时局部变量直接被丢弃，
     // developmentPools.value 依然是上一次成功时的值（或初始的空数组），
     // 不会被污染。
-    const pools = createPools(raw)
+    const pools = createPools(rawPools as DevelopmentPoolData[])
     const nextExistPool: string[] = []
 
     for (const pool of pools) {
-      pool.init(ctypeMap.value, start2Store.getIDs, start2Store.shipList)
+      pool.init(ctypeJson, start2Store.getIDs, start2Store.shipList)
       // 下拉框准入三条件：名称未重复、非负 ID、无最低资源门槛
       if (!nextExistPool.includes(pool.开发池名称) && pool.开发池ID >= 0 && !pool.最低资源)
         nextExistPool.push(pool.开发池名称)
     }
 
+    // 原子发布：ctype 与 pool 一起提交，不出现只更新其中一个的中间状态。
+    ctypeMap.value = ctypeJson
     developmentPools.value = pools
     existPool.value = nextExistPool
   }
@@ -105,13 +134,12 @@ export const useDevelopmentStore = defineStore('development', () => {
     // 这里的判断只是一层快路径（已就绪时省一次函数调用），真正防止重复拉取/
     // 重复重建 filterButtonList 的是下面 initializeData 自身的进行中缓存——
     // 这个判断单独存在时管不住，因为它只覆盖 start2Store.initializeData()
-    // 这一次调用，本函数自己接下来的 readCtypeData / readDevelopmentPools /
-    // initFilterButtonList 完全不受它保护。
+    // 这一次调用，本函数自己接下来的 readCtypeAndPools / initFilterButtonList
+    // 完全不受它保护。
     if (!start2Store.isReady) {
       await start2Store.initializeData()
     }
-    await readCtypeData()
-    await readDevelopmentPools()
+    await readCtypeAndPools()
     initFilterButtonList()
   }
 
