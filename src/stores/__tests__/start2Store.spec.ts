@@ -202,7 +202,7 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
     expect(store.isReady).toBe(false)
   })
 
-  it('部分解析失败（第一条舰船合法、api_mst_slotitem 缺失）：shipList 已非空，但 isReady 必须是 false，且再次调用必须重试（重新拉取 start2.json），不能被"非空"误判为已就绪', async () => {
+  it('缺少 api_mst_slotitem 的畸形 payload：schema 校验在触碰任何 store 状态之前就拒绝，shipList 保持空表，且再次调用必须重试（重新拉取 start2.json）', async () => {
     setActivePinia(createPinia())
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -212,8 +212,10 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
         start2Calls++
         if (start2Calls === 1) {
           // 第一条舰船合法，但整个 payload 缺 api_mst_slotitem——
-          // readStart2 会先把 shipList 写满，再在处理装备数据时
-          // `for (const item of json.api_mst_slotitem)` 因 undefined 不可迭代而抛错。
+          // readStart2 现在先做 schema 校验，validateStart2Payload 会在
+          // 处理任何一条记录之前就因为顶层缺少 api_mst_slotitem 而拒绝，
+          // 不会像旧版本那样先把 shipList 写满、再在装备循环里因为
+          // undefined 不可迭代而意外抛错。
           return {
             json: async () => ({ api_mst_ship: [VALID_SHIP] }),
             text: async () => '[]',
@@ -227,15 +229,19 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
     const store = useStart2Store()
 
     await expect(store.initializeData()).rejects.toThrow()
-    // 关键断言 1：shipList 此时确实已经非空（复现"边解析边发布"的残留状态）——
-    // 如果这一步都不成立，就没有真正复现 G2 描述的那类问题。
-    expect(Object.keys(store.shipList).length).toBeGreaterThan(0)
-    // 关键断言 2：即便 shipList 非空，isReady 也必须是 false。
+    // 关键断言 1（原子发布）：readStart2 现在先把整套结果解析到局部变量，
+    // 只有全部成功后才一次性发布到 store；schema 校验失败发生在任何一次
+    // `shipList.value = ...` 赋值之前，所以 shipList 必须保持这次调用开始前
+    // 的样子（这里是初始的空表），不会出现"舰船写了、装备没写"的半成品状态。
+    // 这与旧版本"边解析边发布，shipList 会残留非空状态"的行为是刻意相反的——
+    // 那正是 P1-2 要修的问题本身，不是需要复现保留的行为。
+    expect(Object.keys(store.shipList).length).toBe(0)
+    // 关键断言 2：isReady 为 false。
     expect(store.isReady).toBe(false)
     expect(start2Calls).toBe(1)
 
     // 关键断言 3：再次调用会真正重新拉取 start2.json（重试），而不是被
-    // "shipList 已非空"这种错误信号挡在外面、或被失败缓存挡住。
+    // 失败缓存挡住。
     await expect(store.initializeData()).resolves.toEqual({ success: true, error: null })
     expect(start2Calls).toBe(2)
     expect(store.isReady).toBe(true)
@@ -276,7 +282,7 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
     expect(store.isReady).toBe(true)
   })
 
-  it('shipList 非空但全是 id>=1500 的敌方舰船（同型舰分类为空）：视为失败，不把 isReady 置位', async () => {
+  it('全是 id>=1500 的敌方舰船（同型舰分类为空）：形状完全合法但业务上判定失败，且不发布任何部分状态，不把 isReady 置位', async () => {
     setActivePinia(createPinia())
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -297,9 +303,133 @@ describe('G2: start2Store.isReady 显式就绪标志', () => {
     const store = useStart2Store()
 
     await expect(store.initializeData()).rejects.toThrow()
-    // shipList 确实非空（复现"非空不等于就绪"）——只是没有任何玩家舰船。
-    expect(Object.keys(store.shipList).length).toBeGreaterThan(0)
+    // 这条 payload 的每条记录本身形状完全合法（能通过 dataSchema 的结构
+    // 校验），只是业务上没有任何玩家舰船，导致同型舰分类为空——这类跨记录
+    // 的业务失败发生在 readStart2 的原子发布块之前，所以 shipList 必须
+    // 保持这次调用开始前的样子（空表），不会因为"记录形状合法"就被部分发布。
+    expect(Object.keys(store.shipList).length).toBe(0)
     expect(Object.keys(store.allSameShipList).length).toBe(0)
+    expect(store.isReady).toBe(false)
+  })
+})
+
+// P1-2：readStart2 接入 dataSchema.js 的结构校验，且改为「先在局部变量里
+// 解析完，最后一次性发布」。dataSchema.spec.ts 已经对校验器本身做了穷举式
+// 覆盖（顶层形状、ID 缺失/非正整数/重复、必需字段缺失、api_type/api_broken
+// 形状等），这里只做集成层面的断言：确认 store 真的接了这套校验、且原子
+// 发布这件事在"覆盖旧数据"这个更严格的场景下也成立——不仅是"这次失败不会
+// 半发布"，还包括"这次失败完全不影响上一次成功遗留的数据"。
+describe('P1-2: readStart2 的 schema 校验与原子发布集成', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('舰船记录缺少 api_id（审查举的原始例子）：初始化失败，shipList 不出现 "undefined" 键，且失败可重试', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    let start2Calls = 0
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) {
+        start2Calls++
+        if (start2Calls === 1) {
+          const shipWithoutId: Record<string, unknown> = { ...VALID_SHIP }
+          delete shipWithoutId.api_id
+          return {
+            json: async () => ({
+              api_mst_ship: [shipWithoutId],
+              api_mst_slotitem: [VALID_EQUIP],
+              api_mst_stype: [],
+              api_mst_equip_ship: [],
+              api_mst_equip_exslot_ship: {},
+            }),
+            text: async () => '[]',
+          }
+        }
+        return { json: async () => goodStart2Payload(), text: async () => '[]' }
+      }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+    const store = useStart2Store()
+
+    await expect(store.initializeData()).rejects.toThrow()
+    // 旧代码在这个场景下会产出键 "undefined" 的 shipList 项；新代码在校验
+    // 阶段就已经拒绝，shipList 根本没被碰过。
+    expect(store.shipList['undefined' as unknown as number]).toBeUndefined()
+    expect(Object.keys(store.shipList).length).toBe(0)
+    expect(store.isReady).toBe(false)
+
+    await expect(store.initializeData()).resolves.toEqual({ success: true, error: null })
+    expect(start2Calls).toBe(2)
+  })
+
+  it('两条舰船记录 api_id 重复：初始化失败', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    stubFetch(async (url: string) => ({
+      json: async () =>
+        url.includes('start2.json')
+          ? {
+              api_mst_ship: [VALID_SHIP, { ...VALID_SHIP, api_name: '另一艘' }],
+              api_mst_slotitem: [VALID_EQUIP],
+              api_mst_stype: [],
+              api_mst_equip_ship: [],
+              api_mst_equip_exslot_ship: {},
+            }
+          : {},
+      text: async () => '[]',
+    }))
+    const store = useStart2Store()
+    await expect(store.initializeData()).rejects.toThrow()
+    expect(store.isReady).toBe(false)
+  })
+
+  it('装备 api_type 长度不是 5：初始化失败', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    stubFetch(async (url: string) => ({
+      json: async () =>
+        url.includes('start2.json')
+          ? {
+              api_mst_ship: [VALID_SHIP],
+              api_mst_slotitem: [{ ...VALID_EQUIP, api_type: [0, 0, 0, 0] }],
+              api_mst_stype: [],
+              api_mst_equip_ship: [],
+              api_mst_equip_exslot_ship: {},
+            }
+          : {},
+      text: async () => '[]',
+    }))
+    const store = useStart2Store()
+    await expect(store.initializeData()).rejects.toThrow()
+    expect(store.isReady).toBe(false)
+  })
+
+  it('成功一次后紧接着失败一次：shipList/equipList 等状态保持上一次成功的内容，不会被这次失败的加载清空或替换——原子发布不只保证「这次不半发布」，也保证「失败时完全不动旧数据」', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    let start2Calls = 0
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) {
+        start2Calls++
+        return { json: async () => (start2Calls === 1 ? goodStart2Payload() : {}), text: async () => '[]' }
+      }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+    const store = useStart2Store()
+
+    await store.readStart2()
+    const shipListRefAfterSuccess = store.shipList
+    const equipListRefAfterSuccess = store.equipList
+    expect(Object.keys(shipListRefAfterSuccess).length).toBeGreaterThan(0)
+
+    await expect(store.readStart2()).rejects.toThrow()
+    // 关键断言：失败的这次加载完全没有碰 shipList/equipList——旧代码会在
+    // 函数一开始就执行 `shipList.value = {}` 清空，哪怕这次加载最终失败，
+    // 上一次成功的数据也已经被清掉了。新代码只在原子发布块里才会替换这些
+    // ref 的值，校验失败发生在那之前，引用和内容都必须和成功时完全一致。
+    expect(store.shipList).toBe(shipListRefAfterSuccess)
+    expect(store.equipList).toBe(equipListRefAfterSuccess)
+    expect(Object.keys(store.shipList).length).toBeGreaterThan(0)
     expect(store.isReady).toBe(false)
   })
 })

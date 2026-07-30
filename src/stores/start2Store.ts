@@ -4,6 +4,77 @@ import type { Api_ShipInfo, SameShip, Api_Mst_Stype, Api_Mst_Equip_Ship, Api_Mst
 import { ShipInfo, SameShipClass } from '@/types/shipTypes'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import { EquipmentType3, EquipInfo } from '@/types/equipTypes'
+import { validateStart2Payload } from '@/core/dataSchema'
+
+/**
+ * 由（已通过 validateStart2Payload 校验的）舰船列表推导同型舰分类。
+ *
+ * 刻意写成不依赖 store 状态的纯函数：readStart2 需要在局部变量里把整套
+ * 解析结果（含同型舰分类）准备完毕后再一次性发布到 store，这个函数只是
+ * 那条流水线上的一步，不直接读写任何 ref。逻辑本身是从原来直接读写
+ * sameShipList.value/allSameShipList.value 的版本原样搬过来的，只是把
+ * 读写对象换成了参数和返回值，不改变同型舰归类算法本身。
+ */
+function computeSameShipList(
+  shipList: Record<number, Api_ShipInfo>,
+): { sameShipList: SameShip[]; allSameShipList: Record<number, SameShip> } {
+  const tempDict: Record<number, SameShip> = {}
+
+  for (const [idStr, ship] of Object.entries(shipList)) {
+    const id = parseInt(idStr)
+    if (id > 1500) continue
+
+    let found = false
+
+    for (const [, existSameShip] of Object.entries(tempDict)) {
+      if (existSameShip.next === ship.id) {
+        existSameShip.ids.push(ship.id)
+        existSameShip.next = ship.afterid
+        found = true
+
+        if (tempDict[ship.afterid]) {
+          const nextSameShip = tempDict[ship.afterid]
+          if (nextSameShip === existSameShip) continue
+
+          for (const nextId of nextSameShip.ids) {
+            existSameShip.ids.push(nextId)
+          }
+          existSameShip.next = nextSameShip.next
+          delete tempDict[ship.afterid]
+        }
+        break
+      }
+    }
+
+    if (!found) {
+      const newSameShip = new SameShipClass()
+      newSameShip.name = ship.name
+      newSameShip.ids = [ship.id]
+      newSameShip.next = ship.afterid
+
+      tempDict[ship.id] = newSameShip
+
+      if (tempDict[ship.afterid]) {
+        const nextSameShip = tempDict[ship.afterid]
+        for (const nextId of nextSameShip.ids) {
+          newSameShip.ids.push(nextId)
+        }
+        newSameShip.next = nextSameShip.next
+        delete tempDict[ship.afterid]
+      }
+    }
+  }
+
+  const sameShipList = Object.values(tempDict)
+  const allSameShipList: Record<number, SameShip> = {}
+  for (const sameShip of sameShipList) {
+    for (const id of sameShip.ids) {
+      allSameShipList[id] = sameShip
+    }
+  }
+
+  return { sameShipList, allSameShipList }
+}
 
 export const useStart2Store = defineStore('start2', () => {
   // 数据存储
@@ -15,12 +86,12 @@ export const useStart2Store = defineStore('start2', () => {
   const api_mst_equip_ship = ref<Api_Mst_Equip_Ship[]>([])
   const api_mst_equip_exslot_ship = ref<Record<number, Api_Mst_Equip_Exslot_Ship>>({})
 
-  // 就绪标志：只在 readStart2() 完整跑完（含下面的非空校验）后置为 true；
-  // 任何抛错路径都不会走到置位那一行。不能用「shipList 非空」代替它——
-  // readStart2 是边解析边把舰船写进 shipList 的（见下面的 for 循环），
-  // 如果解析到一半（比如舰船已经写完、装备数据格式不对）抛错，shipList
-  // 早就非空了，但这次加载并未成功。真正表达「这次加载是否成功」的只有
-  // 这个标志本身，不能从其他状态反推。
+  // 就绪标志：只在 readStart2() 完整跑完（含 schema 校验与下面的同型舰非空
+  // 校验）后置为 true；任何抛错路径都不会走到置位那一行。不能用「shipList
+  // 非空」代替它——虽然 readStart2 现在已经改成先在局部变量里解析完、最后
+  // 才一次性发布（见下面 readStart2 内部的说明），isReady 仍然是唯一直接
+  // 表达"这次加载是否成功"的状态，不从 shipList 等其他状态反推，避免未来
+  // 改动读写顺序时又悄悄引入同类问题。
   const isReady = ref(false)
 
   // 制空相关数据
@@ -29,23 +100,39 @@ export const useStart2Store = defineStore('start2', () => {
   const 攻击机 = [7, 8, 57, 58]
   
   // 读取start2.json数据
+  //
+  // 整体结构：fetch → 解析 JSON → schema 校验 → 在局部变量里构建全部结果
+  // （舰船表、装备表、同型舰分类、打孔装备……）→ 只有到最后"原子发布"那个
+  // 代码块才会写 shipList.value 等响应式状态。中间任何一步抛错，函数在
+  // 走到那个代码块之前就已经退出，store 里的状态还是这次调用开始前的样子
+  // （可能是空表，也可能是上一次成功时留下的旧数据）——不会出现"舰船表已经
+  // 写完、装备表还没处理完就抛错"这种半成品状态被外部读到的情况。
   const readStart2 = async () => {
-    // 立即置为未就绪：哪怕上一次曾经成功过，只要重新进入这个函数，
-    // 旧数据就要被下面这行清空重建（見下方 shipList.value = {}）。
-    // isReady 必须跟着失效，不能继续显示上一次成功时留下的 true——
-    // 否则一次失败的重试会在「旧数据已被清空、新数据尚未就绪」的窗口期，
-    // 让调用方误以为仍是就绪状态。
+    // 立即置为未就绪：哪怕上一次曾经成功过，只要重新进入这个函数，就先假定
+    // 这次加载还没完成。真正的数据要等到下面原子发布那一刻才会替换旧值，
+    // 但 isReady 必须提前失效，不能让调用方在"旧数据还留着、新数据没准备好"
+    // 的这段时间里误以为仍是就绪状态。
     isReady.value = false
     try {
       // 使用基础路径获取start2.json
       const response = await fetch(`${import.meta.env.BASE_URL}data/start2.json`)
       const json = await response.json()
 
-      // 清空现有数据
-      shipList.value = {}
-      equipList.value = {}
+      // schema 校验：结构性问题（顶层形状、必需字段缺失、ID 缺失/重复/
+      // 不是正整数、数组长度不对等，详见 dataSchema.js 的注释）在这里
+      // 一次性拦下，下面的构建逻辑可以放心假设每条记录的形状都是合法的，
+      // 不需要再在循环里逐个做防御性判断。此时还没有碰任何 store 状态。
+      const validation = validateStart2Payload(json)
+      if (!validation.ok) {
+        throw new Error(
+          `start2.json 数据校验失败（共 ${validation.errors.length} 项）：\n` +
+          validation.errors.slice(0, 20).join('\n') +
+          (validation.errors.length > 20 ? `\n...另有 ${validation.errors.length - 20} 条` : ''),
+        )
+      }
 
-      // 处理舰船数据
+      // 处理舰船数据（写入局部变量，不是 shipList.value）
+      const nextShipList: Record<number, Api_ShipInfo> = {}
       for (const item of json.api_mst_ship) {
         const id = item.api_id
         const ship = new ShipInfo()
@@ -57,7 +144,7 @@ export const useStart2Store = defineStore('start2', () => {
         ship.速度 = item.api_soku
         ship.舰种 = item.api_stype
         ship.afterid = item.api_aftershipid || 0
-        
+
         // 玩家舰船特殊处理
         if (id < 1500) {
           ship.最大燃料 = item.api_fuel_max
@@ -65,33 +152,12 @@ export const useStart2Store = defineStore('start2', () => {
         } else {
           ship.yomi = ship.yomi.replace('-', '')
         }
-        
-        shipList.value[id] = ship
+
+        nextShipList[id] = ship
       }
 
-      // 解析"成功"（没有抛异常）不代表数据可用：api_mst_ship 字段存在但是
-      // 空数组时，上面的 for 循环一次都不会迭代，也不会抛错，shipList 会
-      // 悄悄停留在空表状态。这种情况必须视为失败，而不是带着一份空表继续走完
-      // 整个函数、最终把 isReady 置成 true——那样开发池会在空 shipList 上
-      // "成功"展开成什么都匹配不到的状态，且这个坏结果会被 initializeData
-      // 的进行中缓存永久保留，刷新前都无法重试。
-      if (Object.keys(shipList.value).length === 0) {
-        throw new Error('start2.json 解析结果不含任何舰船数据（api_mst_ship 为空），判定为加载失败')
-      }
-
-      // 获取同型舰船列表
-      getSameShipList()
-
-      // shipList 非空不代表 allSameShipList 也非空——getSameShipList 只处理
-      // id < 1500 的玩家舰船（见其实现），如果 shipList 里全是敌方舰船
-      // （id >= 1500），allSameShipList 会是空表。开发池按舰名（舰名）反查
-      // 同型舰要靠 allSameShipList（见 getIDs 的非精确匹配分支），空表会让
-      // 这条路径静默失效而不报错，所以这里也要求它非空才算成功。
-      if (Object.keys(allSameShipList.value).length === 0) {
-        throw new Error('start2.json 解析结果不含任何玩家舰船（同型舰分类为空），判定为加载失败')
-      }
-
-      // 处理装备数据
+      // 处理装备数据（同样先写局部变量）
+      const nextEquipList: Record<number, Api_EquipInfo> = {}
       for (const item of json.api_mst_slotitem) {
         const id = item.api_id
         const equip = new EquipInfo()
@@ -111,41 +177,49 @@ export const useStart2Store = defineStore('start2', () => {
         equip.运 = item.api_luck
         equip.types = [...item.api_type]
         equip.broken = [...item.api_broken]
-        
+
         // 可选属性
         if (item.api_distance !== undefined) {
           equip.航程 = item.api_distance
         }
-        
+
         if (item.api_cost !== undefined) {
           equip.配置消耗 = item.api_cost
         }
-        
-        equipList.value[id] = equip
+
+        nextEquipList[id] = equip
       }
 
-      // 同上：api_mst_slotitem 存在但为空数组时，装备表会悄悄停留在空表状态、
-      // 不抛错。开发算法（出货率/配方）完全依赖装备表，空表下"成功"毫无意义，
-      // 必须视为失败。
-      if (Object.keys(equipList.value).length === 0) {
-        throw new Error('start2.json 解析结果不含任何装备数据（api_mst_slotitem 为空），判定为加载失败')
+      // 由局部舰船表推导同型舰分类，同样只落在局部变量里
+      const { sameShipList: nextSameShipList, allSameShipList: nextAllSameShipList } =
+        computeSameShipList(nextShipList)
+
+      // schema 校验只保证"记录形状合法"，不保证"业务上有意义"——比如
+      // api_mst_ship 里可能全是 id >= 1500 的敌方舰船，形状完全合法，但
+      // computeSameShipList 只处理玩家舰船，这种情况下 allSameShipList
+      // 会是空表。开发池按舰名反查同型舰要靠 allSameShipList（见 getIDs
+      // 的非精确匹配分支），空表会让这条路径静默失效而不报错，所以这里
+      // 仍然需要单独判空——这属于跨记录的业务校验，不是 dataSchema.js
+      // 里逐条记录的结构校验能覆盖的范围。
+      if (Object.keys(nextAllSameShipList).length === 0) {
+        throw new Error('start2.json 解析结果不含任何玩家舰船（同型舰分类为空），判定为加载失败')
       }
 
-      // 处理其他数据
-      api_mst_stype.value = json.api_mst_stype
-      api_mst_equip_ship.value = json.api_mst_equip_ship
-      api_mst_equip_exslot_ship.value = json.api_mst_equip_exslot_ship
-      
-      // 处理打孔装备
-      for (const ship of Object.values(shipList.value)) {
+      const nextStype = json.api_mst_stype as Api_Mst_Stype[]
+      const nextEquipShip = json.api_mst_equip_ship as Api_Mst_Equip_Ship[]
+      const nextEquipExslotShip = json.api_mst_equip_exslot_ship as Record<number, Api_Mst_Equip_Exslot_Ship>
+
+      // 处理打孔装备：只读写上面几个局部变量（在 nextShipList 里的 ship
+      // 对象上追加字段），不触碰任何 store 状态。
+      for (const ship of Object.values(nextShipList)) {
         if (ship.id > 1500) continue
-        
+
         ship.打孔装备 = {}
-        
+
         // 处理打孔装备信息
-        for (const [key, value] of Object.entries(api_mst_equip_exslot_ship.value)) {
+        for (const [key, value] of Object.entries(nextEquipExslotShip)) {
           const equipId = parseInt(key)
-          
+
           if (value.api_ship_ids && value.api_ship_ids[ship.id]) {
             ship.打孔装备[equipId] = value.api_req_level
           } else if (value.api_stypes && value.api_stypes[ship.stype]) {
@@ -154,15 +228,15 @@ export const useStart2Store = defineStore('start2', () => {
             ship.打孔装备[equipId] = value.api_req_level
           }
         }
-        
+
         // 获取可装备类型
         const equipTypes: number[] = []
-        const foundShipEquip = api_mst_equip_ship.value.find(a => a.api_ship_id === ship.id)
-        
+        const foundShipEquip = nextEquipShip.find(a => a.api_ship_id === ship.id)
+
         if (foundShipEquip) {
           equipTypes.push(...foundShipEquip.api_equip_type)
         } else {
-          const foundStype = api_mst_stype.value.find(a => a.api_id === ship.stype)
+          const foundStype = nextStype.find(a => a.api_id === ship.stype)
           if (foundStype) {
             for (const [key, value] of Object.entries(foundStype.api_equip_type)) {
               if (value === 1) {
@@ -171,18 +245,18 @@ export const useStart2Store = defineStore('start2', () => {
             }
           }
         }
-        
+
         // 处理打孔装备图标
         ship.打孔装备图标 = {}
-        
+
         for (const [equipId, reqLevel] of Object.entries(ship.打孔装备 || {})) {
           const id = parseInt(equipId)
-          const equip = equipList.value[id]
+          const equip = nextEquipList[id]
           if (!equip) continue
-          
+
           const key = equip.types[3]
           const itemType = equip.types[2]
-          
+
           if (equipTypes.includes(itemType)) {
             if (ship.打孔装备图标[key]) {
               ship.打孔装备图标[key] = Math.max(reqLevel, ship.打孔装备图标[key])
@@ -193,90 +267,28 @@ export const useStart2Store = defineStore('start2', () => {
         }
       }
 
-      // 必须是整个函数体里最后落地的一行：只有到这里都没有抛错、也没有在
-      // 上面任何一处提前 return（本函数目前没有提前 return，但这条注释是给
-      // 以后改这个函数的人看的——新增的提前返回分支必须在这行之前，不能
-      // 绕过它），才代表这次加载真正完整成功。
+      // 原子发布：从这里开始只是简单赋值，不会再抛错——前面任何一步的失败
+      // 都已经在到达这里之前 throw 出去了，store 不会观察到"发布了一半"的
+      // 中间态。isReady 必须是这个块里最后落地的一行：本函数目前没有在这个
+      // 块之后、之外的提前 return，以后改这个函数的人也不能绕过它。
+      shipList.value = nextShipList
+      equipList.value = nextEquipList
+      sameShipList.value = nextSameShipList
+      allSameShipList.value = nextAllSameShipList
+      api_mst_stype.value = nextStype
+      api_mst_equip_ship.value = nextEquipShip
+      api_mst_equip_exslot_ship.value = nextEquipExslotShip
       isReady.value = true
     } catch (error) {
       console.error('读取start2数据失败:', error)
-      // 必须重抛：这是关键数据，解析失败（如接口返回结构变化、空对象等）不能
-      // 被当作"已处理"悄悄放过。不重抛的话 shipList/equipList 会以空表状态
-      // 留在下面，_initializeData 的 success 保持 true，调用方拿到一个看似
-      // 成功、实则空的数据集，且这个"成功"会被 initializeData 的进行中缓存
-      // 永久保存——刷新页面前都无法重试。
+      // 必须重抛：这是关键数据，解析/校验失败（如接口返回结构变化、字段
+      // 缺失或类型不对等）不能被当作"已处理"悄悄放过。不重抛的话调用方会
+      // 拿到一个看似成功、实则数据有问题的结果，且这个"成功"会被
+      // initializeData 的进行中缓存永久保存——刷新页面前都无法重试。
       throw error
     }
   }
-  
-  // 获取同型舰船列表
-  const getSameShipList = () => {
-    sameShipList.value = []
-    allSameShipList.value = {}
-    
-    const tempDict: Record<number, SameShip> = {}
-    
-    // 处理所有舰船
-    for (const [idStr, ship] of Object.entries(shipList.value)) {
-      const id = parseInt(idStr)
-      if (id > 1500) continue
-      
-      let found = false
-      
-      // 查找已有的同型舰
-      for (const [existIdStr, existSameShip] of Object.entries(tempDict)) {
-        if (existSameShip.next === ship.id) {
-          existSameShip.ids.push(ship.id)
-          existSameShip.next = ship.afterid
-          found = true
-          
-          // 合并链接的同型舰
-          if (tempDict[ship.afterid]) {
-            const nextSameShip = tempDict[ship.afterid]
-            if (nextSameShip === existSameShip) continue
-            
-            for (const nextId of nextSameShip.ids) {
-              existSameShip.ids.push(nextId)
-            }
-            existSameShip.next = nextSameShip.next
-            delete tempDict[ship.afterid]
-          }
-          break
-        }
-      }
-      
-      // 如果没有找到相关同型舰，创建新的
-      if (!found) {
-        const newSameShip = new SameShipClass()
-        newSameShip.name = ship.name
-        newSameShip.ids = [ship.id]
-        newSameShip.next = ship.afterid
-        
-        tempDict[ship.id] = newSameShip
-        
-        // 合并已有的改造后舰船
-        if (tempDict[ship.afterid]) {
-          const nextSameShip = tempDict[ship.afterid]
-          for (const nextId of nextSameShip.ids) {
-            newSameShip.ids.push(nextId)
-          }
-          newSameShip.next = nextSameShip.next
-          delete tempDict[ship.afterid]
-        }
-      }
-    }
-    
-    // 保存结果
-    sameShipList.value = Object.values(tempDict)
-    
-    // 构建完整的映射
-    for (const sameShip of sameShipList.value) {
-      for (const id of sameShip.ids) {
-        allSameShipList.value[id] = sameShip
-      }
-    }
-  }
-  
+
   // 读取深海舰船数据
   const readAbyssalStats = async () => {
     try {
