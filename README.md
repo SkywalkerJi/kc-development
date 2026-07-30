@@ -25,6 +25,27 @@ pnpm sync-data --from /path/to/dir
 都不随本仓库分发。需要更新基准时，须在能访问该工具的环境里重新生成
 `vectors.json` 后再提交进来；仅凭 `git clone` 这个仓库无法完成这一步。
 
+## 译名数据更新
+
+装备 / 舰船 / 舰级的各语言译名存放在 `public/data/i18n/`，由同步脚本从
+[KC3Kai/kc3-translations](https://github.com/KC3Kai/kc3-translations)（MIT）生成：
+
+```sh
+pnpm sync-i18n --kc3 /path/to/kc3-translations
+```
+
+脚本会跑舰名合成（基础名 + 前后缀表）与舰级派生（首舰译名 + 本地化后缀），
+并做四项硬性校验，任何一项不过就非零退出：开发池引用的装备全部有译名、
+全部玩家舰有译名、开发池引用的舰级有译名，以及**派生出的简体舰级名必须与
+既有 `ctype.json` 逐字相同**（这条同时验证派生算法与两条取数路径的等价性）。
+
+`ja` 的 `items.json`/`ships.json` **故意是空对象**：日文名的唯一真值源是
+`start2.json`，复制一份进来会在 start2 更新而脚本没重跑时静默漂移。
+`zh-Hans` **不产出 `ctype.json`**：`public/data/ctype.json` 本身就是那份数据。
+
+⚠️ 更新 `public/data/start2.json` 后必须重跑本脚本 —— 舰船与装备的译名表是
+按当前那份 start2 的 ID 集合生成的。
+
 ## 测试
 
 ```sh
