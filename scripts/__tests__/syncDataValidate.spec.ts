@@ -13,6 +13,8 @@ function validShip(overrides: Record<string, unknown> = {}) {
     api_stype: 1,
     api_ctype: 1,
     api_soku: 5,
+    // 玩家舰（id < 1500）必须带 api_aftershipid，正式数据里是数字字符串
+    api_aftershipid: '0',
     api_fuel_max: 100,
     api_bull_max: 100,
     ...overrides,

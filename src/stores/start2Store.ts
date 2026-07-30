@@ -14,6 +14,12 @@ export const useStart2Store = defineStore('start2', () => {
   const equipList = ref<Record<number, Api_EquipInfo>>({})
   const sameShipList = ref<SameShip[]>([])
   const allSameShipList = ref<Record<number, SameShip>>({})
+  /**
+   * 舰船表的原始录入顺序（id 序列）。以 id 为键的 shipList 表达不了它
+   * （JS 对整数样键一律按数值升序枚举），而同型舰分类与按舰名反查都依赖
+   * 这个顺序 —— 详见 core/sameShipList.ts 里 order 参数的说明。
+   */
+  const shipOrder = ref<number[]>([])
   const api_mst_stype = ref<Api_Mst_Stype[]>([])
   const api_mst_equip_ship = ref<Api_Mst_Equip_Ship[]>([])
   const api_mst_equip_exslot_ship = ref<Record<number, Api_Mst_Equip_Exslot_Ship>>({})
@@ -136,9 +142,11 @@ export const useStart2Store = defineStore('start2', () => {
         nextEquipList[id] = equip
       }
 
-      // 由局部舰船表推导同型舰分类，同样只落在局部变量里
+      // 由局部舰船表推导同型舰分类，同样只落在局部变量里。
+      // 顺序显式取自原始数组，不能靠 nextShipList 的键顺序反推。
+      const nextShipOrder = json.api_mst_ship.map((item: { api_id: number }) => item.api_id)
       const { sameShipList: nextSameShipList, allSameShipList: nextAllSameShipList } =
-        computeSameShipList(nextShipList)
+        computeSameShipList(nextShipList, nextShipOrder)
 
       // schema 校验只保证"记录形状合法"，不保证"业务上有意义"——比如
       // api_mst_ship 里可能全是 id >= 1500 的敌方舰船，形状完全合法，但
@@ -218,6 +226,7 @@ export const useStart2Store = defineStore('start2', () => {
       // 中间态。isReady 必须是这个块里最后落地的一行：本函数目前没有在这个
       // 块之后、之外的提前 return，以后改这个函数的人也不能绕过它。
       shipList.value = nextShipList
+      shipOrder.value = nextShipOrder
       equipList.value = nextEquipList
       sameShipList.value = nextSameShipList
       allSameShipList.value = nextAllSameShipList
@@ -495,10 +504,10 @@ export const useStart2Store = defineStore('start2', () => {
     } else {
       // 同型舰匹配：与对拍夹具共用 core/sameShipList.ts 的那一份实现。
       // 此前这里和夹具各手抄了一份，于是「对拍全绿」只约束了夹具那一份。
-      return resolveShipIDs(
-        names, shipList.value, allSameShipList.value,
-        (name) => console.error(`游戏基础数据版本错误，请先刷新游戏: ${name}`),
-      )
+      return resolveShipIDs(names, shipList.value, allSameShipList.value, {
+        order: shipOrder.value,
+        onMissing: (name) => console.error(`游戏基础数据版本错误，请先刷新游戏: ${name}`),
+      })
     }
 
     return result

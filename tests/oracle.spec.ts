@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { loadFixtures } from './helpers/loadFixtures'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
+import { isPoolSelectable } from '@/core/developmentPool'
 import { selectPoolType, canonicalSortResults } from '@/core/recipe'
 import type { DevelopResult, PoolType, Resources } from '@/core/types'
 
@@ -191,7 +192,10 @@ describe('对拍：正向出货率', () => {
       // 这里单独断言一次，确认向量记录的 poolType 与它的产出一致。
       expect(selectPoolType(res)).toBe(v.poolType)
 
-      const base = fx.pools.find((p) => p.开发池名称 === v.pool && p.开发池ID >= 0)
+      // 谓词必须与生产挑基准池时完全一致 —— 少了「无最低资源门槛」这个条件，
+      // 同名池里带门槛的那个排在前面时，这里会去对拍一个用户根本选不到的池。
+      // 走 core 的共享谓词，不在这里重写条件。
+      const base = fx.pools.find((p) => p.开发池名称 === v.pool && isPoolSelectable(p))
       expect(base).toBeDefined()
 
       // 正向侧对拍现在调用的是 computePoolRates——DevelopmentView.vue 的
@@ -203,6 +207,10 @@ describe('对拍：正向出货率', () => {
       const sortKeys = (o: Record<string, number[]>) =>
         Object.keys(o).map(Number).sort((a, b) => a - b).map(String)
       expect(sortKeys(mine)).toEqual(sortKeys(v.rates))
+      // totals 的键集合也要与 details 完全相同 —— 只逐个校 details 里有的键，
+      // totals 多出来的键不会失败。
+      expect(Object.keys(totals).map(Number).sort((a, b) => a - b))
+        .toEqual(sortKeys(mine).map(Number))
       for (const k of sortKeys(mine)) {
         expect(mine[Number(k)]).toEqual(v.rates[k])
         // totals 也直接对着向量明细求和校一遍。
@@ -232,9 +240,12 @@ describe('对拍：正向出货率', () => {
 // 比较是**逐元素、含重复项、含顺序**的：舰ID 里刻意保留了重复项，它参与
 // 池排序（舰ID.length）与「取最窄池」的判断，去重会改变那两处的结果。
 describe('对拍：逐池 舰ID', () => {
-  it('向量记录了 poolShipIds', () => {
+  it('向量记录了 poolShipIds，且与实际池数一一对应', () => {
     expect(vectors.poolShipIds).toBeDefined()
     expect(vectors.poolShipIds!.length).toBe(99)
+    // 下面的 it.each 只遍历向量条目 —— 若实际池比向量多，多出来的尾部池
+    // 不会被任何用例检查。这里把两侧数量钉在一起。
+    expect(fx.pools.length).toBe(vectors.poolShipIds!.length)
   })
 
   it.each((vectors.poolShipIds ?? []).map((v, i) => [i, v] as const))(

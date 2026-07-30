@@ -149,12 +149,6 @@ export interface SameShip {
 }
 
 // 实现同型舰类
-export class SameShipClass implements SameShip {
-  name: string = '';
-  ids: number[] = [];
-  next: number = 0;
-}
-
 export interface Api_Mst_Stype {
   api_id: number;
   api_sortno: number;

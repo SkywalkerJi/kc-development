@@ -18,10 +18,9 @@ export function computeEnabledEquipIds(
   selected: number[],
 ): number[] {
   // 注意：selected 为空时本函数返回的是「全部登记过的装备」（所有池都通过
-  // 准入），不是空集。**这段遍历并不便宜**（每个候选池都要重建 舰ID 集合），
-  // 而调用方在这种情况下根本用不到结果 —— 它应该直接走「全部可用」分支，
-  // 不要调用本函数。参考实现也是在调用点分支的，见 DevelopmentView 的
-  // refreshEnabled。
+  // 准入），不是空集。这段遍历要跑 existPool × 3 轮池匹配，调用方在这种
+  // 情况下根本用不到结果 —— 它应该直接走「全部可用」分支，不要调用本函数。
+  // 参考实现也是在调用点分支的，见 DevelopmentView 的 refreshEnabled。
   //
   // 这里刻意**不**加 `if (selected.length === 0) return []` 的提前返回：
   // 那会让返回值的含义在「无约束」与「什么都不可用」之间重载，调用方稍有

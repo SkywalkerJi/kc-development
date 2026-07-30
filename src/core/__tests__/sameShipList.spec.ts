@@ -82,7 +82,8 @@ describe('同型舰改造链', () => {
   it('任意一个名字查不到就立即返回已收集的部分结果', () => {
     const onMissing: string[] = []
     const got = resolveShipIDs(
-      ['睦月', '并不存在的舰', '如月'], ships, allSameShipList, (n) => onMissing.push(n),
+      ['睦月', '并不存在的舰', '如月'], ships, allSameShipList,
+      { onMissing: (n) => onMissing.push(n) },
     )
     expect(got).toEqual([1, 254, 434]) // 「如月」没有被收集
     expect(onMissing).toEqual(['并不存在的舰'])
@@ -95,5 +96,43 @@ describe('同型舰改造链', () => {
     expect(resolveShipIDs(['Zara'], ships, allSameShipList)).toEqual([448, 358, 496])
     expect(resolveShipIDs(['蒼龍'], ships, allSameShipList)).toEqual([90, 279, 197])
     expect(resolveShipIDs(['飛龍'], ships, allSameShipList)).toEqual([91, 280, 196])
+  })
+})
+
+describe('遍历顺序影响分叉归属', () => {
+  // 两艘舰指向同一个 afterid 时，谁先被当成链头，另一个就只能自成单舰链。
+  // 正式数据里有 23 组这样的舰，所以这不是假想场景 —— 只是当前数据恰好按
+  // id 升序录入，两种顺序结果相同。
+  const ships = {
+    1: { id: 1, name: '甲', afterid: 3 },
+    2: { id: 2, name: '乙', afterid: 3 },
+    3: { id: 3, name: '丙', afterid: 0 },
+  }
+
+  it('按原始录入顺序 [2,1,3]：2 拿到 3，1 自成一条', () => {
+    const { allSameShipList } = computeSameShipList(ships, [2, 1, 3])
+    expect(allSameShipList[2].ids).toEqual([2, 3])
+    expect(allSameShipList[1].ids).toEqual([1])
+  })
+
+  it('按原始录入顺序 [1,2,3]：结论相反', () => {
+    const { allSameShipList } = computeSameShipList(ships, [1, 2, 3])
+    expect(allSameShipList[1].ids).toEqual([1, 3])
+    expect(allSameShipList[2].ids).toEqual([2])
+  })
+
+  it('省略顺序时退化为按 id 升序 —— 所以正式数据路径必须显式传', () => {
+    const { allSameShipList } = computeSameShipList(ships)
+    expect(allSameShipList[1].ids).toEqual([1, 3])
+  })
+
+  it('同名舰取原始顺序里的第一个', () => {
+    const dup = {
+      1: { id: 1, name: '同名', afterid: 0 },
+      2: { id: 2, name: '同名', afterid: 0 },
+    }
+    const { allSameShipList } = computeSameShipList(dup, [2, 1])
+    expect(resolveShipIDs(['同名'], dup, allSameShipList, { order: [2, 1] })).toEqual([2])
+    expect(resolveShipIDs(['同名'], dup, allSameShipList, { order: [1, 2] })).toEqual([1])
   })
 })

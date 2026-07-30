@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopmentPoolData } from '@/core/types'
-import { DevelopmentPoolClass, createPools } from '@/core/developmentPool'
+import { DevelopmentPoolClass, createPools, isPoolSelectable } from '@/core/developmentPool'
 import { validateCtypeMap, validateDevelopmentPools } from '@/core/dataSchema'
 import { useStart2Store } from './start2Store'
 import { fetchJson } from './fetchJson'
@@ -37,13 +37,6 @@ export const useDevelopmentStore = defineStore('development', () => {
   const ctypeMap = ref<Record<string, string>>({})
   const existPool = ref<string[]>([])
   /**
-   * 下拉框（秘书舰类型）候选池的准入谓词。**这是这条规则的唯一定义**，
-   * existPool 与 selectablePools 都走它，不要在别处重写一遍条件。
-   * 名称去重不在这里，由调用方按池的先后顺序保证（取同名池中的第一个）。
-   */
-  const isSelectable = (p: DevelopmentPoolClass) => p.开发池ID >= 0 && !p.最低资源
-
-  /**
    * 下拉框可选的池对象。由 developmentPools 派生，不是另存一份状态 ——
    * 多一份需要手工保持同步的状态，比它想消除的那点重复更容易出错。
    */
@@ -51,7 +44,7 @@ export const useDevelopmentStore = defineStore('development', () => {
     const seen = new Set<string>()
     const out: DevelopmentPoolClass[] = []
     for (const pool of developmentPools.value) {
-      if (!isSelectable(pool) || seen.has(pool.开发池名称)) continue
+      if (!isPoolSelectable(pool) || seen.has(pool.开发池名称)) continue
       seen.add(pool.开发池名称)
       out.push(pool)
     }
@@ -103,8 +96,8 @@ export const useDevelopmentStore = defineStore('development', () => {
 
     for (const pool of pools) {
       pool.init(ctypeJson, start2Store.getIDs, start2Store.shipList)
-      // 准入条件走上面那个唯一定义的 isSelectable，这里只额外做名称去重
-      if (!nextExistPool.includes(pool.开发池名称) && isSelectable(pool))
+      // 准入条件走 core 里那个唯一定义的 isPoolSelectable，这里只额外做名称去重
+      if (!nextExistPool.includes(pool.开发池名称) && isPoolSelectable(pool))
         nextExistPool.push(pool.开发池名称)
     }
 

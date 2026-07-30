@@ -45,12 +45,29 @@ export interface SameShipTables {
 /** 深海舰的分界：参考实现只对 id 小于该值的玩家舰做同型舰分类。 */
 const PLAYER_SHIP_ID_LIMIT = 1500
 
-export function computeSameShipList(shipList: Record<number, ShipLike>): SameShipTables {
-  // 参考实现按舰船表的原始录入顺序遍历，而该表是按 id 升序录入的；这里显式
-  // 排序，让「顺序依赖」变成本函数自己的契约，不依赖调用方怎么构造这个对象。
+export function computeSameShipList(
+  shipList: Record<number, ShipLike>,
+  /**
+   * 舰船表的**原始顺序**（id 序列）。
+   *
+   * 这不是可有可无的参数：参考实现按舰船表的录入顺序遍历，而遍历顺序会改变
+   * 结果 —— 当两艘舰指向同一个 afterid 时（正式数据里有 23 组这样的），
+   * 谁先被当成链头，另一个就只能自成一条单舰链。例如录入顺序是
+   * [2→3, 1→3, 3→0] 时，参考实现得到 [[2,3],[1]]，按 id 升序遍历则得到
+   * [[1,3],[2]]，两者的开发池 舰ID 会因此不同。
+   *
+   * 以 id 为键的普通对象**表达不了原始顺序**（JS 对整数样键一律按数值升序
+   * 枚举），所以必须由调用方从原始数组里显式传进来。
+   *
+   * 省略时退化为按 id 升序 —— 只适用于「调用方确知顺序无关」的场合（比如
+   * 单元测试里的小规模构造）。正式数据路径都应当显式传。
+   */
+  order?: readonly number[],
+): SameShipTables {
+  const ids = order ?? Object.keys(shipList).map(Number).sort((a, b) => a - b)
   const listA = new Map<number, ShipLike>()
-  for (const id of Object.keys(shipList).map(Number).sort((a, b) => a - b))
-    if (id < PLAYER_SHIP_ID_LIMIT) listA.set(id, shipList[id])
+  for (const id of ids)
+    if (id < PLAYER_SHIP_ID_LIMIT && shipList[id]) listA.set(id, shipList[id])
 
   const processed = new Set<number>()
   const chains: SameShipChain[] = []
@@ -149,21 +166,25 @@ export function computeSameShipList(shipList: Record<number, ShipLike>): SameShi
  *
  * 刻意复刻参考实现的两处细节：
  * - 任意一个名字查不到，**立即返回已经收集到的部分结果**，不是跳过继续；
- * - 同名舰取遍历顺序里的第一个（舰船表按 id 升序，故等价于取最小 id）。
- *
- * @param onMissing 名字查不到时的回调（生产用它打日志；夹具不传）
+ * - 同名舰取**舰船表原始顺序**里的第一个。
  */
 export function resolveShipIDs(
   names: string[],
   shipList: Record<number, { name: string }>,
   allSameShipList: Record<number, SameShipChain>,
-  onMissing?: (name: string) => void,
+  options: {
+    /** 舰船表原始顺序；同名舰取其中的第一个。省略则按 id 升序，理由同上。 */
+    order?: readonly number[]
+    /** 名字查不到时的回调（生产用它打日志；夹具不传） */
+    onMissing?: (name: string) => void
+  } = {},
 ): number[] {
+  const { order, onMissing } = options
   const out: number[] = []
-  const ids = Object.keys(shipList).map(Number).sort((a, b) => a - b)
+  const ids = order ?? Object.keys(shipList).map(Number).sort((a, b) => a - b)
 
   for (const name of names) {
-    const hit = ids.find((id) => shipList[id].name === name)
+    const hit = ids.find((id) => shipList[id]?.name === name)
     if (hit === undefined) {
       onMissing?.(name)
       return out

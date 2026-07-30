@@ -39,38 +39,38 @@
         <div class="resource-inputs">
           <div class="resource-group">
             <label for="fuel">油</label>
-            <input id="fuel" type="text" inputmode="numeric" :value="rawResources[0]"
+            <input id="fuel" type="text" inputmode="numeric" :value="rawResourceText[0]"
               @input="onResourceInput(0, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 0)"
-              @blur="normalizeResource(0, $event)">
+              @blur="normalizeResource(0)">
           </div>
 
           <div class="resource-group">
             <label for="ammo">弹</label>
-            <input id="ammo" type="text" inputmode="numeric" :value="rawResources[1]"
+            <input id="ammo" type="text" inputmode="numeric" :value="rawResourceText[1]"
               @input="onResourceInput(1, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 1)"
-              @blur="normalizeResource(1, $event)">
+              @blur="normalizeResource(1)">
           </div>
 
           <div class="resource-group">
             <label for="steel">钢</label>
-            <input id="steel" type="text" inputmode="numeric" :value="rawResources[2]"
+            <input id="steel" type="text" inputmode="numeric" :value="rawResourceText[2]"
               @input="onResourceInput(2, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 2)"
-              @blur="normalizeResource(2, $event)">
+              @blur="normalizeResource(2)">
           </div>
 
           <div class="resource-group">
             <label for="bauxite">铝</label>
-            <input id="bauxite" type="text" inputmode="numeric" :value="rawResources[3]"
+            <input id="bauxite" type="text" inputmode="numeric" :value="rawResourceText[3]"
               @input="onResourceInput(3, $event)"
               @compositionstart="onCompositionStart"
               @compositionend="onCompositionEnd($event, 3)"
-              @blur="normalizeResource(3, $event)">
+              @blur="normalizeResource(3)">
           </div>
         </div>
         
@@ -221,8 +221,8 @@
                 :key="index"
                 tabindex="0"
                 role="row"
-                :aria-selected="index === selectedResultIndex"
-                :class="{ 'result-selected': index === selectedResultIndex }"
+                :aria-selected="result === selectedResult"
+                :class="{ 'result-selected': result === selectedResult }"
                 @click="selectResultAt(index)"
               >
                 <td v-for="col in RESULT_COLUMNS" :key="col.key">{{ col.display(result) }}</td>
@@ -276,14 +276,33 @@ const selectedPool = ref<DevelopmentPoolClass | null>(null)
 // - committedResources：已通过校验的合法资源，groupedEquipments、refreshCurrentPool
 //   等全部只读这个。写入时机见 watch(rawResources, ...) 与 normalizeResource。
 const rawResources = ref<number[]>([10, 10, 10, 10])
+/**
+ * 输入框里**正在显示的文本**。
+ *
+ * 必须与 rawResources 分开：空输入框是合法的编辑中间态（参考实现允许文本框
+ * 在失焦之前处于空/非法状态），而 rawResources 是 number[]，表达不了「空」。
+ * 此前把「空」只留在 DOM 上，结果是任何一次与输入框无关的重渲染都会把它
+ * 回填成旧数字 —— Vue 对 value 这个 prop 是**每次重渲染都重新 patch** 的，
+ * 且比较的是 DOM 当前值与新值，空框必然被写回。
+ */
+const rawResourceText = ref<string[]>(['10', '10', '10', '10'])
 const committedResources = ref<number[]>([10, 10, 10, 10])
 // 上一个通过整数校验的资源值，供小数/空值输入回退时使用。
 const lastValid = ref<number[]>([10, 10, 10, 10])
 const currentPoolEquipments = ref<Record<number, number>>({})
 const equipRatesDetailMap = ref<Record<number, number[]>>({})
 const developmentResults = ref<DevelopResult[]>([])
-/** 「可用公式」表当前选中的行下标（相对 sortedResults）；null = 未选中任何行。 */
-const selectedResultIndex = ref<number | null>(null)
+/**
+ * 「可用公式」表当前选中的那一条结果。
+ *
+ * ⚠️ 存的是**结果对象本身**，不是显示下标。参考实现那里是个列表控件，选中
+ * 状态跟着**项**走：排序只是重排显示位置，选中的还是同一项，因此不会触发
+ * 「选中项变化」、也就不会重新应用配方。若这里存下标，排序后同一条逻辑配方
+ * 换了位置，就会被当成「选中项变了」而重新应用 —— 把用户手改的资源覆盖掉。
+ *
+ * 只有结果集合被整体替换（refreshResults）时才清空。
+ */
+const selectedResult = ref<DevelopResult | null>(null)
 /** 当前排序列的 key；null = 不排序，按 computeRecipes 产出的默认顺序展示。 */
 const sortColumn = ref<string | null>(null)
 const sortAsc = ref(true)
@@ -333,7 +352,14 @@ const sortedResults = computed(() => {
     const va = col.value(a)
     const vb = col.value(b)
     if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb)
-    return dir * String(va).localeCompare(String(vb), 'zh-Hans-CN')
+    // 字符串列复刻参考实现的比较方式：大小写不敏感的 ordinal（按 UTF-16
+    // 码元逐个比），**不是**按拼音的本地化比较。
+    // 数值列偏离参考实现是因为那里确实是缺陷（数值被当字符串排，总资源会
+    // 排成 101 → 121 → 90）；字符串列没有缺陷可修，换成拼音序只是换了一种
+    // 排法，属于无理由的偏离。若哪天决定按拼音排，要作为一条有意偏离记进文档。
+    const x = String(va).toUpperCase()
+    const y = String(vb).toUpperCase()
+    return dir * (x < y ? -1 : x > y ? 1 : 0)
   })
 })
 
@@ -344,8 +370,9 @@ function onResultHeaderClick(key: string) {
     sortColumn.value = key
     sortAsc.value = true
   }
-  // 顺序变了，旧下标不再指向同一条结果
-  selectedResultIndex.value = null
+  // **不要**在这里清空选中项：排序只改变显示位置，选中的还是同一条结果。
+  // 清空的话，用户排完序再点回那一条，会被当成「新选中」而重新应用配方，
+  // 把手改过的资源覆盖掉。选中态存的是结果对象，排序后自动跟着走。
 }
 // initializeData() 返回 { success: false } 时置位，模板据此不渲染依赖数据的
 // 主内容（见上面模板里的 v-if="initFailed"）。
@@ -449,7 +476,7 @@ function refreshResults() {
   // 列表整体换了，旧下标不再指向同一条结果，必须重置 —— 否则「同一行不重复
   // 触发」的判断会拿旧下标去比新列表。排序状态也要一并复位：参考实现在
   // 改选装备时会把列表控件的排序器清掉，回到默认顺序。
-  selectedResultIndex.value = null
+  selectedResult.value = null
   sortColumn.value = null
   sortAsc.value = true
 }
@@ -545,6 +572,7 @@ watch(rawResources, () => {
   lastValid.value = result.lastValid
   if (result.revertedResources) {
     rawResources.value = result.revertedResources
+    rawResourceText.value = result.revertedResources.map(String)
     return
   }
   if (!result.recompute) return
@@ -555,7 +583,7 @@ watch(rawResources, () => {
   // 只重算正向路径。公式列表（computeRecipes）与按钮状态
   // （computeEnabledEquipIds）的入参里既没有资源、也没有所选池，资源一变
   // 它们的输出不可能变化 —— 参考实现在资源变化时同样只重算正向路径。
-  // 这两个函数都要为全部候选池重建 舰ID 集合，跑一遍并不便宜。
+  // 这两个函数各要跑 existPool × 3 轮池匹配，跑一遍并不便宜。
   refreshCurrentPool()
 }, { deep: true })
 
@@ -605,14 +633,15 @@ function onResourceInput(index: number, event: Event) {
   const target = event.target as ComposingInput
   if (target.composing) return
   const text = resolveResourceInputText(target.value, String(lastValid.value[index]))
+  // 文本是显示的唯一真值来源；同时写回 DOM 是因为文本可能与本次按键前相同
+  // （比如 "100" 后面又敲了个 "."，清洗后还是 "100"），那样不会触发重渲染，
+  // 浏览器会一直显示用户刚打出来的非法字符。
+  rawResourceText.value[index] = text
   target.value = text
 
   const value = parseResourceInput(text)
-  // 空输入框是**合法的编辑中间态**：参考实现允许文本框在失焦之前处于空/非法
-  // 状态，期间既不重算、也不回填，失焦时才还原成上一个合法值。
-  // 这里保持 rawResources 不动 —— 用户能继续看到空框（DOM 上面已经写成 ''），
-  // 而算法读的仍是上一个合法值。此前的写法把空输入转成 NaN 写进去，watcher
-  // 立刻整体回退，表现成「退格到最后一个字符时输入框自己跳回原值」。
+  // 空输入框是合法的编辑中间态：保持 rawResources 不动 —— 算法读的仍是上一个
+  // 合法值，而用户看到的是空框（由 rawResourceText 驱动，不会被重渲染回填）。
   if (Number.isNaN(value)) return
   rawResources.value[index] = value
 }
@@ -632,22 +661,15 @@ function validateResource(index: number) {
 // 每个 TextBox 独立的 Leave 处理，不等其它字段一起合法）提交为
 // committedResources 并重算，不受 watch(rawResources, ...) 里 recompute
 // 门槛的限制。
-function normalizeResource(index: number, event: Event) {
-  const target = event.target as HTMLInputElement
-
+function normalizeResource(index: number) {
   // 输入框为空 → 还原成上一个合法值，与参考实现失焦时的还原一致。
-  // 必须看 DOM 的实际文本，不能只看 rawResources：后者是数字数组，
-  // 表达不了「空」这个状态，里面存的是最后一次成功解析出的数字。
-  // （若只走 validateResource，"清空前打过 3" 会被钳成下限 10，而不是
-  // 还原成清空前那个真正合法的值。）
-  if (target.value === '') rawResources.value[index] = lastValid.value[index]
+  // 判断依据是文本而不是 rawResources：后者是数字数组，表达不了「空」，
+  // 里面存的是最后一次成功解析出的数字。（若只走 validateResource，
+  // 「清空前打过 3」会被钳成下限 10，而不是还原成清空前那个合法值。）
+  if (rawResourceText.value[index] === '') rawResources.value[index] = lastValid.value[index]
 
   validateResource(index)
-
-  // 把最终值写回 DOM。不能只靠响应式重渲染：validateResource 钳出来的值
-  // 常常与 rawResources 里原有的值相同（尤其是刚还原过），响应式不触发
-  // 更新，空框就会一直空着。
-  target.value = String(rawResources.value[index])
+  rawResourceText.value[index] = String(rawResources.value[index])
   committedResources.value = rawResources.value.slice()
   refreshCurrentPool()   // 同 watch(rawResources)：只有正向路径依赖资源
 }
@@ -674,7 +696,7 @@ function toggleEquipment(equipId: number) {
   //
   // 走 selectResultAt 而不是直接 selectResult，是为了让选中态与手动点击一致
   // （第一行会高亮，并成为方向键的起点）。上面 refreshResults() 刚把
-  // selectedResultIndex 复位成 null，所以这一次必定触发。
+  // selectedResult 复位成 null，所以这一次必定触发。
   if (developmentResults.value.length > 0) {
     selectResultAt(0)
   }
@@ -704,9 +726,11 @@ function getResourceRequirement(equip: Api_EquipInfo): string {
  */
 function selectResultAt(index: number) {
   if (index < 0 || index >= sortedResults.value.length) return
-  if (selectedResultIndex.value === index) return
-  selectedResultIndex.value = index
-  selectResult(sortedResults.value[index])
+  const result = sortedResults.value[index]
+  // 比的是对象标识而不是下标：排序改变的是位置，不是选中的是哪一条
+  if (selectedResult.value === result) return
+  selectedResult.value = result
+  selectResult(result)
 }
 
 /** 方向键 / Home / End 在结果行之间移动选中项，与点击走同一条应用路径。 */
@@ -748,8 +772,10 @@ function selectResult(result: DevelopResult) {
   // 触发一次（引用变了），逐项写在值相同时不触发。真有值变化时 watcher
   // 仍会触发一次，但它开头那条「与已提交值相同就跳过」的判断会把这次
   // 回声挡掉。
-  for (let i = 0; i < 4; i++)
+  for (let i = 0; i < 4; i++) {
     if (rawResources.value[i] !== result.公式[i]) rawResources.value[i] = result.公式[i]
+    rawResourceText.value[i] = String(result.公式[i])
+  }
   committedResources.value = [...result.公式]
   lastValid.value = [...result.公式]
 

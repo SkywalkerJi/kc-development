@@ -126,12 +126,26 @@ export function validateStart2Payload(json) {
     if (!isFiniteNumber(item.api_ctype)) errors.push(`${tag} 缺少 api_ctype`)
     if (!isFiniteNumber(item.api_soku)) errors.push(`${tag} 缺少 api_soku`)
 
-    if (item.api_aftershipid !== undefined) {
-      const a = item.api_aftershipid
-      const validAfter =
-        (typeof a === 'number' && Number.isInteger(a) && a >= 0) ||
+    // api_aftershipid：正式数据里玩家舰一律是**数字字符串**（如 "254"），
+    // 深海舰（id >= 1500）根本没有这个字段。消费方会把它转成数字用作改造链的
+    // 指针，所以这里要保证「转得出一个安全的整数」，而不只是「形状像数字」：
+    //   - 玩家舰必须有这个字段。缺了会被静默转成 0，表现为改造链在那里断掉，
+    //     而不是报错 —— 参考实现在这种输入上是直接失败的。
+    //   - 数字串长度不限的话，400 位数字也能通过 /^\d+$/，转换后变成 Infinity。
+    //     所以要把转换结果夹在 32 位有符号整数范围内（参考实现用的就是 int）。
+    const a = item.api_aftershipid
+    if (a === undefined) {
+      if (isPositiveInteger(id) && id < 1500)
+        errors.push(`${tag} 是玩家舰船但缺少 api_aftershipid`)
+    } else {
+      const shaped =
+        (typeof a === 'number' && Number.isInteger(a)) ||
         (typeof a === 'string' && /^\d+$/.test(a))
-      if (!validAfter) errors.push(`${tag} api_aftershipid 类型不对（须为非负整数或纯数字字符串）`)
+      const n = shaped ? Number(a) : NaN
+      if (!shaped || !Number.isInteger(n) || n < 0 || n > 2147483647)
+        errors.push(
+          `${tag} api_aftershipid 不合法（须为 0..2147483647 的整数，或其纯数字字符串形式）`,
+        )
     }
 
     if (isPositiveInteger(id) && id < 1500) {

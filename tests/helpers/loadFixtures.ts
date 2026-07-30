@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createPools, type DevelopmentPoolClass } from '@/core/developmentPool'
+import { createPools, isPoolSelectable, type DevelopmentPoolClass } from '@/core/developmentPool'
 import { computeSameShipList, resolveShipIDs } from '@/core/sameShipList'
 import type { DevelopmentPoolData } from '@/core/types'
 
@@ -44,16 +44,18 @@ export function loadFixtures(): Fixtures {
     chainShips[s.api_id] = {
       id: s.api_id, name: s.api_name, afterid: Number(s.api_aftershipid ?? 0),
     }
-  const { allSameShipList } = computeSameShipList(chainShips)
+  // 顺序取自原始数组：以 id 为键的对象表达不了它，而同型舰分类依赖它
+  const shipOrder: number[] = start2.api_mst_ship.map((s: { api_id: number }) => s.api_id)
+  const { allSameShipList } = computeSameShipList(chainShips, shipOrder)
   const getIDs = (names: string[]): number[] =>
-    resolveShipIDs(names, chainShips, allSameShipList)
+    resolveShipIDs(names, chainShips, allSameShipList, { order: shipOrder })
 
   const raw: DevelopmentPoolData[] = read('DevelopmentPool.json')
   const pools = createPools(raw)
   const existPool: string[] = []
   for (const p of pools) {
     p.init(ctypeMap, getIDs, shipList)
-    if (!existPool.includes(p.开发池名称) && p.开发池ID >= 0 && !p.最低资源)
+    if (!existPool.includes(p.开发池名称) && isPoolSelectable(p))
       existPool.push(p.开发池名称)
   }
 

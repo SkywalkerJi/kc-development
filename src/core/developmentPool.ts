@@ -112,6 +112,21 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
   }
 }
 
+/**
+ * 下拉框（秘书舰类型）候选池的准入谓词：非负 ID 且没有最低资源门槛。
+ *
+ * **这是这条规则的唯一定义。** 生产的 existPool/selectablePools、对拍夹具
+ * 的 existPool、以及对拍里挑基准池的地方都必须走它 —— 三处各写一遍的话，
+ * 只要有一处漏掉某个条件，对拍就会去验证一个用户根本选不到的池。
+ * 名称去重不在这里，由调用方按池的先后顺序保证（取同名池中的第一个）。
+ */
+export function isPoolSelectable(pool: {
+  开发池ID: number
+  最低资源?: number[]
+}): boolean {
+  return pool.开发池ID >= 0 && !pool.最低资源
+}
+
 export function createPools(data: DevelopmentPoolData[]): DevelopmentPoolClass[] {
   return data.map((d) => {
     const 舰ID = [...(d.舰ID ?? [])]

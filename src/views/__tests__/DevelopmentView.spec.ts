@@ -347,6 +347,14 @@ describe('DevelopmentView — 与参考实现对齐的展示与按钮状态', ()
     // 关键：空框保持空，不会「自己跳回 30」
     expect(fuelInput.value).toBe('')
 
+    // 关键：清空之后发生一次与输入框无关的重渲染，空框必须保持空。
+    // 编辑中的文本若只存在 DOM 上，这一步会把它回填成旧数字 ——
+    // Vue 对 value 这个 prop 每次重渲染都重新 patch，且比较的是 DOM 当前值。
+    const developmentStore = useDevelopmentStore()
+    developmentStore.filterButtonList[100].enabled = false
+    await flush()
+    expect(fuelInput.value).toBe('')
+
     // 失焦：还原成上一个合法值
     fireBlur(fuelInput)
     await flush()
@@ -525,6 +533,44 @@ describe('DevelopmentView — 「可用公式」的选中语义', () => {
     const now = container!.querySelectorAll<HTMLTableRowElement>('.development-results tbody tr')
     expect(now[0].querySelectorAll('td')[1].textContent).toBe('30')  // 回到默认顺序
     expect(rows.length).toBe(2)
+  })
+
+  it('排序后再点同一逻辑配方不会重新应用 —— 选中态跟着结果对象走，不是显示位置', async () => {
+    const rows = await showTwoResults()
+    const fuel = container!.querySelector<HTMLInputElement>('#fuel')!
+    const signature = (r: Element) =>
+      [...r.querySelectorAll('td')].map((c) => c.textContent).join('|')
+    const selected = signature(rows[0])
+
+    // 用户手改油并失焦
+    fireInput(fuel, '200')
+    fireBlur(fuel)
+    await flush()
+    expect(fuel.value).toBe('200')
+
+    // 点表头排序 —— 显示位置变了，选中的还是同一条结果
+    const th = [...container!.querySelectorAll<HTMLTableCellElement>(
+      '.development-results th',
+    )].find((h) => h.textContent?.startsWith('铝'))!
+    th.click()
+    await flush()
+
+    const after = [...container!.querySelectorAll<HTMLTableRowElement>(
+      '.development-results tbody tr',
+    )]
+    const same = after.find((r) => signature(r) === selected)!
+    expect(same.classList.contains('result-selected')).toBe(true)
+
+    // 再点它：选中项没有变化 → 不触发 → 手改的 200 保住
+    same.click()
+    await flush()
+    expect(fuel.value).toBe('200')
+
+    // 点另一条才会应用
+    const other = after.find((r) => signature(r) !== selected)!
+    other.click()
+    await flush()
+    expect(fuel.value).not.toBe('200')
   })
 
   it('方向键与点击走同一条应用路径', async () => {

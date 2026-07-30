@@ -15,6 +15,9 @@ function validShip(overrides: Record<string, unknown> = {}) {
     api_stype: 1,
     api_ctype: 1,
     api_soku: 5,
+    // 玩家舰（id < 1500）必须带 api_aftershipid —— 缺了会被静默转成 0，
+    // 表现为改造链在那里断掉而不是报错。正式数据里它是数字字符串。
+    api_aftershipid: '0',
     api_fuel_max: 100,
     api_bull_max: 100,
     ...overrides,
@@ -148,9 +151,30 @@ describe('validateStart2Payload', () => {
     expect(validateStart2Payload(ok).ok).toBe(true)
   })
 
-  it('api_aftershipid 缺失时不算错误（可选字段）', () => {
-    const ok = { ...validPayload(), api_mst_ship: [validShip({ api_aftershipid: undefined })] }
+  it('深海舰（id >= 1500）缺 api_aftershipid 不算错误 —— 正式数据里它们本来就没有', () => {
+    const ok = {
+      ...validPayload(),
+      api_mst_ship: [
+        validShip(),
+        validShip({ api_id: 1501, api_fuel_max: undefined, api_bull_max: undefined,
+                    api_aftershipid: undefined }),
+      ],
+    }
     expect(validateStart2Payload(ok).ok).toBe(true)
+  })
+
+  it('玩家舰缺 api_aftershipid 时拒绝 —— 缺了会被静默转成 0，让改造链在那里断掉', () => {
+    const bad = { ...validPayload(), api_mst_ship: [validShip({ api_aftershipid: undefined })] }
+    expect(validateStart2Payload(bad).ok).toBe(false)
+  })
+
+  it('api_aftershipid 超出 32 位有符号整数范围时拒绝', () => {
+    // 只校验「形状像数字」是不够的：400 位数字串也能通过 /^\d+$/，
+    // Number() 之后是 Infinity，而参考实现在这种输入上是直接失败的。
+    for (const bad of ['2147483648', '9'.repeat(400)]) {
+      const payload = { ...validPayload(), api_mst_ship: [validShip({ api_aftershipid: bad })] }
+      expect(validateStart2Payload(payload).ok, `api_aftershipid=${bad.slice(0, 12)}…`).toBe(false)
+    }
   })
 
   it('api_aftershipid 是数字字符串时通过（正式数据的实际形状，比如 "254"）', () => {
