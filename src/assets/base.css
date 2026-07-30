@@ -1,0 +1,51 @@
+/*
+ * 全局基础样式。由 main.ts 引入，作用于整个文档。
+ *
+ * ⚠️ 这里的规则**不能**挪回 App.vue 的 <style scoped>。scoped 会把选择器
+ * 编译成 `body[data-v-xxx]`，而 data-v 属性只会被加到组件模板渲染出来的
+ * 元素上；body 由 index.html 提供，永远拿不到这个属性 —— 整条规则静默失效，
+ * 既不报错也不警告。此前 App.vue 里就是这么写的，后果是全站一直跑在浏览器
+ * 默认样式上（实测 body 的 computed font-family 为 "Times New Roman"、
+ * margin 为 8px，两条声明一条都没生效）。
+ *
+ * 反过来，App.vue 里的 `main { padding: 1rem }` 必须**留在** scoped 块内：
+ * HomeView.vue 也有一个裸 <main>，那条规则一旦全局化就会连带影响它。
+ */
+
+:root {
+  /*
+   * 中文优先的无衬线字体栈。
+   *
+   * 原来写的是 `Arial, sans-serif` —— Arial 本身不含汉字，浏览器为汉字回落
+   * 时并不会顺延到后面的 sans-serif（字体栈是按字符逐个回落的，但 generic
+   * family 在多数浏览器上解析成用户设置里的「默认字体」，中文环境下通常是
+   * 宋体一类的衬线族）。所以必须显式列出各平台的中文无衬线族。
+   */
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif;
+
+  /*
+   * 「秘书舰类型」下拉框与「秘书舰」搜索框两行的标签宽度。
+   *
+   * 两个标签分属 DevelopmentView 与 FlagshipSearch 两个组件，各自 scoped
+   * 样式互相看不见；靠自定义属性共享同一个值，是为了让两行的控件左边缘对齐
+   * 而又不在两处各写一遍魔数（自定义属性是继承的，scoped 拦不住它）。
+   *
+   * 取值依据是最长的那个标签「秘书舰类型：」：5 个汉字 + 1 个全角冒号，
+   * CJK 全角字符在各字体下一律是 1em，所以正好 6em。多出来的 0.5em 是
+   * 标签盒子内的右侧余量 —— 标签与控件之间的视觉间距就由它给出，因此
+   * 标签上不需要再写 margin-right（写了会让两行控件左边缘错开 8px）。
+   */
+  --form-label-width: 6.5em;
+
+  /* 「秘书舰类型」下拉框与「秘书舰」搜索框共用的控件宽度 */
+  --form-control-width: 300px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--app-font-sans);
+}

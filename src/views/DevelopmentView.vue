@@ -799,17 +799,12 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   margin: 0 auto;
 }
 
-.flagship-info {
-  margin-bottom: 20px;
-}
-
-.flagship-status {
-  font-weight: bold;
-}
-
-.flagship-status.warning {
-  color: red;
-}
+/*
+ * 这里原本还有 .flagship-info / .flagship-status / .flagship-status.warning
+ * 三条规则。模板里没有任何元素带这些 class（秘书舰那块早已拆成
+ * FlagshipSearch 组件，且它用的是 .matched / .mismatched / .miss），
+ * 属于组件拆分后遗留的死样式，一并删掉。
+ */
 
 .init-error {
   padding: 1rem;
@@ -837,9 +832,20 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   margin-bottom: 15px;
 }
 
+/* 与 FlagshipSearch 的标签共用 --form-label-width（定义见 assets/base.css），
+   让「秘书舰类型：」的下拉框与「秘书舰」的搜索框左边缘对齐。
+   同时也补上标签与控件之间的间距 —— 这行此前只是靠「：」这个全角冒号
+   看着像有空隙，模板里 `</label>\n<select>` 之间的空白同样被
+   whitespace: 'condense' 删掉了。 */
+.secretary-select label {
+  display: inline-block;
+  width: var(--form-label-width);
+}
+
 .secretary-select select {
-  width: 300px;
+  width: var(--form-control-width);
   padding: 5px;
+  box-sizing: border-box;
 }
 
 .resource-inputs {
@@ -878,6 +884,26 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   padding: 8px;
   text-align: left;
   border-bottom: 1px solid #ddd;
+}
+
+/*
+ * 装备图标此前**没有任何尺寸约束**——只有右侧 .equipment-buttons button img
+ * 那一条限了 24px，表格里的图标一直以 54px 的原始尺寸渲染（实测
+ * getBoundingClientRect 为 54×54），把每一行撑到 70px 高，几十行下来整张表
+ * 拉出好几屏。这里定到 32px：表格是主要阅读区，比按钮里的 24px 大一档以便
+ * 辨认，同时行高降到 48px 左右。
+ */
+.equipment-list img {
+  width: 32px;
+  height: 32px;
+  vertical-align: middle;
+  display: block;
+}
+
+/* 图标列定宽，避免某几行没有图标时列宽随内容跳动 */
+.equipment-list th:first-child,
+.equipment-list td:first-child {
+  width: 48px;
 }
 
 .group-header {

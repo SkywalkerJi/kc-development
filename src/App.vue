@@ -23,12 +23,16 @@ import DataInitializer from './components/DataInitializer.vue'
 </template>
 
 <style scoped>
-body {
-  margin: 0;
-  padding: 0;
-  font-family: Arial, sans-serif;
-}
-
+/*
+ * 这里原本还有一条 `body { margin: 0; padding: 0; font-family: Arial, sans-serif }`。
+ * 它从来没有生效过 —— scoped 会把它编译成 `body[data-v-xxx]`，而 data-v 属性
+ * 只加在组件模板渲染出的元素上，body 由 index.html 提供，永远匹配不上。
+ * 规则已移到 src/assets/base.css（由 main.ts 引入），那里还说明了为什么
+ * 字体栈不能只写 Arial。
+ *
+ * 下面这条 main 规则则相反，**必须**留在 scoped 里：HomeView.vue 也有一个
+ * 裸 <main>，全局化会连它一起加上内边距。
+ */
 main {
   padding: 1rem;
 }
