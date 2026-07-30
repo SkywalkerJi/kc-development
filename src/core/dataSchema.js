@@ -52,10 +52,16 @@ function isNumericArrayOfLength(v, len) {
  * 2. 必需的顶层数组/对象字段缺失或类型不对：
  *    api_mst_ship、api_mst_slotitem（须为数组，且不能是空数组——
  *    字段存在但空数组会让后续处理悄悄产出空表，必须在这里拦下来，
- *    不能指望"处理后判断是否非空"这种事后检查）；api_mst_stype、
- *    api_mst_equip_ship（须为数组，允许为空——它们只是打孔装备计算的
- *    辅助数据，为空只是让打孔装备图标算不出来，不是致命错误）；
- *    api_mst_equip_exslot_ship（须为对象，允许为空）
+ *    不能指望"处理后判断是否非空"这种事后检查）；api_mst_stype
+ *    （须为数组，允许为空——它只是辅助数据，为空不是致命错误）
+ *
+ *    ⚠️ api_mst_equip_ship 与 api_mst_equip_exslot_ship **不在校验范围内**，
+ *    是有意的：本项目从不消费这两张表。它们此前只喂给 ship.打孔装备 /
+ *    打孔装备图标，而那两个字段全项目只写不读，已随同一次改动删除。
+ *    上游在 2026-07 把 api_mst_equip_ship 从「数组 + api_equip_type 数值
+ *    数组」改成了「以舰ID为键的对象 + api_equip_type 对象映射」——继续校验
+ *    它，等于为了满足一个自己写的校验器去适配一份自己根本不读的数据，
+ *    并且会让整份 payload 因此被拒绝、应用直接白屏。不读就不校验。
  * 3. 舰船记录（api_mst_ship 的每一项）：
  *    - api_id 缺失、不是正整数、或与其他记录重复
  *    - api_name、api_yomi 缺失或不是字符串（api_yomi 允许空字符串——
@@ -76,9 +82,6 @@ function isNumericArrayOfLength(v, len) {
  *    - api_broken 不是数组、长度不是 4、或含非数值元素
  *    - api_distance、api_cost：可选，存在时必须是有限数值
  * 5. api_mst_stype 的每一项：api_id 缺失/不是数值，api_equip_type 缺失/不是对象
- * 6. api_mst_equip_ship 的每一项：api_ship_id 缺失/不是数值，
- *    api_equip_type 缺失/不是数组
- * 7. api_mst_equip_exslot_ship 的每个值：必须是对象且 api_req_level 是有限数值
  *
  * 边界：不做的事——不校验 stype/ctype 的取值是否在已知舰种范围内、
  * 不校验装备属性数值是否为非负数（有些参考实现里可能存在负值修正项，
@@ -94,8 +97,6 @@ export function validateStart2Payload(json) {
   if (!Array.isArray(json.api_mst_ship)) errors.push('api_mst_ship 缺失或不是数组')
   if (!Array.isArray(json.api_mst_slotitem)) errors.push('api_mst_slotitem 缺失或不是数组')
   if (!Array.isArray(json.api_mst_stype)) errors.push('api_mst_stype 缺失或不是数组')
-  if (!Array.isArray(json.api_mst_equip_ship)) errors.push('api_mst_equip_ship 缺失或不是数组')
-  if (!isPlainObject(json.api_mst_equip_exslot_ship)) errors.push('api_mst_equip_exslot_ship 缺失或不是对象')
 
   // 顶层容器形状都不对时不再往下逐条校验记录——避免对着根本不是数组/对象
   // 的字段做 .forEach/Object.entries 抛出无关的二次错误，把真正的顶层
@@ -185,19 +186,6 @@ export function validateStart2Payload(json) {
     if (!isFiniteNumber(item.api_id)) errors.push(`${label} 缺少 api_id`)
     if (!isPlainObject(item.api_equip_type)) errors.push(`${label} 缺少 api_equip_type`)
   })
-
-  json.api_mst_equip_ship.forEach((item, idx) => {
-    const label = `api_mst_equip_ship[${idx}]`
-    if (!isPlainObject(item)) { errors.push(`${label} 不是对象`); return }
-    if (!isFiniteNumber(item.api_ship_id)) errors.push(`${label} 缺少 api_ship_id`)
-    if (!Array.isArray(item.api_equip_type)) errors.push(`${label} api_equip_type 必须是数组`)
-  })
-
-  for (const [key, value] of Object.entries(json.api_mst_equip_exslot_ship)) {
-    if (!isPlainObject(value) || !isFiniteNumber(value.api_req_level)) {
-      errors.push(`api_mst_equip_exslot_ship["${key}"] 缺少合法的 api_req_level`)
-    }
-  }
 
   return errors.length === 0 ? { ok: true, errors: [] } : { ok: false, errors }
 }

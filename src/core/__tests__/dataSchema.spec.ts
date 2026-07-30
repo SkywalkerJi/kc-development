@@ -88,9 +88,29 @@ describe('validateStart2Payload', () => {
     expect(result.errors.join('\n')).toMatch(/api_mst_slotitem 为空数组/)
   })
 
-  it('api_mst_stype / api_mst_equip_ship 允许为空数组（只是打孔装备计算的辅助数据）', () => {
-    const ok = { ...validPayload(), api_mst_stype: [], api_mst_equip_ship: [] }
+  it('api_mst_stype 允许为空数组（它只是辅助数据，不是致命错误）', () => {
+    const ok = { ...validPayload(), api_mst_stype: [] }
     expect(validateStart2Payload(ok).ok).toBe(true)
+  })
+
+  // 上游在 2026-07 把 api_mst_equip_ship 从「数组 + api_equip_type 数值数组」
+  // 改成了「以舰ID为键的对象 + api_equip_type 对象映射」。本项目从不消费这张表
+  // （它此前只喂给 ship.打孔装备/打孔装备图标，而那两个字段全项目只写不读，
+  // 已随本次改动一并删除），所以校验器也不应该因为它的形状而拒绝整份数据 ——
+  // 否则就是「为了满足一个自己写的校验器，去适配一份自己根本不读的数据」。
+  // api_mst_equip_exslot_ship 同理。
+  it('api_mst_equip_ship / api_mst_equip_exslot_ship 的形状不参与校验', () => {
+    const newUpstreamShape = {
+      ...validPayload(),
+      api_mst_equip_ship: { '100': { api_equip_type: { '1': null, '27': [268] } } },
+      api_mst_equip_exslot_ship: { '10': { api_req_level: 'x' } },
+    }
+    expect(validateStart2Payload(newUpstreamShape).errors).toEqual([])
+
+    const absent: Record<string, unknown> = { ...validPayload() }
+    delete absent.api_mst_equip_ship
+    delete absent.api_mst_equip_exslot_ship
+    expect(validateStart2Payload(absent).errors).toEqual([])
   })
 
   // 类别 2：舰船记录缺 ID / ID 不是正整数 / ID 重复
@@ -230,20 +250,15 @@ describe('validateStart2Payload', () => {
     expect(validateStart2Payload({ ...validPayload(), api_mst_slotitem: [validEquip({ api_broken: [1, 1, 1, null] })] }).ok).toBe(false)
   })
 
-  it('api_mst_equip_exslot_ship 的值缺少合法 api_req_level 时拒绝', () => {
-    const bad = {
-      ...validPayload(),
-      api_mst_equip_exslot_ship: { '10': { api_req_level: 'x' } },
-    }
-    expect(validateStart2Payload(bad).ok).toBe(false)
-  })
-
-  it('api_mst_stype / api_mst_equip_ship 记录字段不对时拒绝', () => {
+  // 这里原本还有两条断言：「api_mst_equip_exslot_ship 的值缺少合法
+  // api_req_level 时拒绝」，以及上面这条里针对 api_mst_equip_ship 记录字段的
+  // 那一半。两者随对应校验一并删除 —— 校验没了，断言就没有对象可测；留着
+  // 只会变成永远为真的空壳。删除理由见本文件上方
+  // 「api_mst_equip_ship / api_mst_equip_exslot_ship 的形状不参与校验」
+  // 那条测试的注释。
+  it('api_mst_stype 记录字段不对时拒绝', () => {
     const badStype = { ...validPayload(), api_mst_stype: [{ api_id: 'x', api_equip_type: {} }] }
     expect(validateStart2Payload(badStype).ok).toBe(false)
-
-    const badEquipShip = { ...validPayload(), api_mst_equip_ship: [{ api_ship_id: 1, api_equip_type: 'x' }] }
-    expect(validateStart2Payload(badEquipShip).ok).toBe(false)
   })
 })
 

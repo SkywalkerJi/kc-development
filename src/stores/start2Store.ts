@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Api_ShipInfo, SameShip, Api_Mst_Stype, Api_Mst_Equip_Ship, Api_Mst_Equip_Exslot_Ship } from '@/types/shipTypes'
+import type { Api_ShipInfo, SameShip, Api_Mst_Stype } from '@/types/shipTypes'
 import { ShipInfo } from '@/types/shipTypes'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import { EquipmentType3, EquipInfo } from '@/types/equipTypes'
@@ -20,9 +20,15 @@ export const useStart2Store = defineStore('start2', () => {
    * 这个顺序 —— 详见 core/sameShipList.ts 里 order 参数的说明。
    */
   const shipOrder = ref<number[]>([])
+  /**
+   * 舰种表。目前只有 _initializeData 末尾的计数日志在读它，但它是有消费者的
+   * 公开数据：多语言的舰种名以它的 api_name 为日文真值源（`海防艦`/`駆逐艦`/
+   * `軽巡洋艦`…），不需要手抄一份。
+   *
+   * 与它同批的 api_mst_equip_ship / api_mst_equip_exslot_ship 已被删除 ——
+   * 那两张表没有任何消费者，理由见下面 readStart2 里的说明。
+   */
   const api_mst_stype = ref<Api_Mst_Stype[]>([])
-  const api_mst_equip_ship = ref<Api_Mst_Equip_Ship[]>([])
-  const api_mst_equip_exslot_ship = ref<Record<number, Api_Mst_Equip_Exslot_Ship>>({})
 
   // 就绪标志：只在 readStart2() 完整跑完（含 schema 校验与下面的同型舰非空
   // 校验）后置为 true；任何抛错路径都不会走到置位那一行。不能用「shipList
@@ -40,7 +46,7 @@ export const useStart2Store = defineStore('start2', () => {
   // 读取start2.json数据
   //
   // 整体结构：fetch → 解析 JSON → schema 校验 → 在局部变量里构建全部结果
-  // （舰船表、装备表、同型舰分类、打孔装备……）→ 只有到最后"原子发布"那个
+  // （舰船表、装备表、同型舰分类、舰种表）→ 只有到最后"原子发布"那个
   // 代码块才会写 shipList.value 等响应式状态。中间任何一步抛错，函数在
   // 走到那个代码块之前就已经退出，store 里的状态还是这次调用开始前的样子
   // （可能是空表，也可能是上一次成功时留下的旧数据）——不会出现"舰船表已经
@@ -160,66 +166,21 @@ export const useStart2Store = defineStore('start2', () => {
       }
 
       const nextStype = json.api_mst_stype as Api_Mst_Stype[]
-      const nextEquipShip = json.api_mst_equip_ship as Api_Mst_Equip_Ship[]
-      const nextEquipExslotShip = json.api_mst_equip_exslot_ship as Record<number, Api_Mst_Equip_Exslot_Ship>
 
-      // 处理打孔装备：只读写上面几个局部变量（在 nextShipList 里的 ship
-      // 对象上追加字段），不触碰任何 store 状态。
-      for (const ship of Object.values(nextShipList)) {
-        if (ship.id > 1500) continue
-
-        ship.打孔装备 = {}
-
-        // 处理打孔装备信息
-        for (const [key, value] of Object.entries(nextEquipExslotShip)) {
-          const equipId = parseInt(key)
-
-          if (value.api_ship_ids && value.api_ship_ids[ship.id]) {
-            ship.打孔装备[equipId] = value.api_req_level
-          } else if (value.api_stypes && value.api_stypes[ship.stype]) {
-            ship.打孔装备[equipId] = value.api_req_level
-          } else if (value.api_ctypes && value.api_ctypes[ship.ctype]) {
-            ship.打孔装备[equipId] = value.api_req_level
-          }
-        }
-
-        // 获取可装备类型
-        const equipTypes: number[] = []
-        const foundShipEquip = nextEquipShip.find(a => a.api_ship_id === ship.id)
-
-        if (foundShipEquip) {
-          equipTypes.push(...foundShipEquip.api_equip_type)
-        } else {
-          const foundStype = nextStype.find(a => a.api_id === ship.stype)
-          if (foundStype) {
-            for (const [key, value] of Object.entries(foundStype.api_equip_type)) {
-              if (value === 1) {
-                equipTypes.push(parseInt(key))
-              }
-            }
-          }
-        }
-
-        // 处理打孔装备图标
-        ship.打孔装备图标 = {}
-
-        for (const [equipId, reqLevel] of Object.entries(ship.打孔装备 || {})) {
-          const id = parseInt(equipId)
-          const equip = nextEquipList[id]
-          if (!equip) continue
-
-          const key = equip.types[3]
-          const itemType = equip.types[2]
-
-          if (equipTypes.includes(itemType)) {
-            if (ship.打孔装备图标[key]) {
-              ship.打孔装备图标[key] = Math.max(reqLevel, ship.打孔装备图标[key])
-            } else {
-              ship.打孔装备图标[key] = reqLevel
-            }
-          }
-        }
-      }
+      // 此处原本还有一段「打孔装备」计算：遍历 api_mst_equip_exslot_ship 与
+      // api_mst_equip_ship，在每个 ship 对象上写出 打孔装备 / 打孔装备图标
+      // 两个字段。整段删掉的原因是这两个字段**只写不读** —— 全项目没有任何
+      // 组件或 core 模块消费它们（与 App.vue 里那段被删掉的「数据加载状态
+      // 面板」同一种情况）。
+      //
+      // 删除它同时解掉了一个真实的阻碍：上游在 2026-07 把 api_mst_equip_ship
+      // 从「数组 + api_equip_type 数值数组」改成了「以舰ID为键的对象 +
+      // api_equip_type 对象映射」。若保留这段计算，换用新版 start2.json 时
+      // validateStart2Payload 会因形状不符拒绝整份数据，应用直接白屏 ——
+      // 而白屏的代价是为了算一份没人看的字段。不读就不算、也不校验。
+      //
+      // 若将来真要做打孔装备相关功能：从 json 里重新取这两张表即可，但要
+      // 按当前上游形状写，并同步恢复 dataSchema.js 里对应的校验。
 
       // 原子发布：从这里开始只是简单赋值，不会再抛错——前面任何一步的失败
       // 都已经在到达这里之前 throw 出去了，store 不会观察到"发布了一半"的
@@ -231,8 +192,6 @@ export const useStart2Store = defineStore('start2', () => {
       sameShipList.value = nextSameShipList
       allSameShipList.value = nextAllSameShipList
       api_mst_stype.value = nextStype
-      api_mst_equip_ship.value = nextEquipShip
-      api_mst_equip_exslot_ship.value = nextEquipExslotShip
       isReady.value = true
     } catch (error) {
       console.error('读取start2数据失败:', error)
@@ -635,8 +594,6 @@ export const useStart2Store = defineStore('start2', () => {
     allSameShipList,
     isReady,
     api_mst_stype,
-    api_mst_equip_ship,
-    api_mst_equip_exslot_ship,
     initializeData,
     // 故意不导出 readStart2：inflight 只在失败时清空，成功一次后会永久保留
     // 那个已 resolve 的 promise。如果 readStart2 是公开 API，外部代码可以

@@ -42,8 +42,6 @@ export interface Api_ShipInfo {
   命中项_炮击: number;
   夜战攻击类型: number;
   装备个数: Record<string, number>;
-  打孔装备?: Record<number, number>;
-  打孔装备图标?: Record<number, number>;
   携带攻击机?: boolean;
   level?: number;
   samename?: boolean;
@@ -109,8 +107,6 @@ export class ShipInfo implements Api_ShipInfo {
     "副炮": 0,
     "鱼雷": 0
   };
-  打孔装备?: Record<number, number>;
-  打孔装备图标?: Record<number, number>;
   携带攻击机?: boolean;
   level?: number;
   samename?: boolean;
@@ -167,26 +163,13 @@ export class Mst_Stype implements Api_Mst_Stype {
   api_equip_type: Record<number, number> = {};
 }
 
-export interface Api_Mst_Equip_Ship {
-  api_ship_id: number;
-  api_equip_type: number[];
-}
-
-export class Mst_Equip_Ship implements Api_Mst_Equip_Ship {
-  api_ship_id: number = 0;
-  api_equip_type: number[] = [];
-}
-
-export interface Api_Mst_Equip_Exslot_Ship {
-  api_ship_ids?: Record<number, number>;
-  api_stypes?: Record<number, number>;
-  api_ctypes?: Record<number, number>;
-  api_req_level: number;
-}
-
-export class Mst_Equip_Exslot_Ship implements Api_Mst_Equip_Exslot_Ship {
-  api_ship_ids?: Record<number, number>;
-  api_stypes?: Record<number, number>;
-  api_ctypes?: Record<number, number>;
-  api_req_level: number = 0;
-} 
+/*
+ * 这里原本还有 Api_Mst_Equip_Ship / Mst_Equip_Ship /
+ * Api_Mst_Equip_Exslot_Ship / Mst_Equip_Exslot_Ship 四个声明，以及
+ * Api_ShipInfo / ShipInfo 上的 打孔装备 / 打孔装备图标 两个字段。
+ *
+ * 一并删除的原因见 stores/start2Store.ts 里 readStart2 的说明：那两个字段
+ * 只写不读，本项目没有任何消费者；而 Api_Mst_Equip_Ship 的声明形状
+ * （api_equip_type: number[]）已被上游在 2026-07 改成对象映射，留着只会
+ * 在换用新版 start2.json 时变成一处对不上事实的类型声明。
+ */ 
