@@ -164,12 +164,15 @@ describe('F2: start2 解析失败时的健壮性', () => {
   })
 })
 
-// G2：就绪判断不能靠"非空推断"。start2Store 是边解析边把舰船写进 shipList 的
-// （readStart2 内部逐条 `shipList.value[id] = ship`），如果第一条舰船合法、
+// G2：就绪判断不能靠"非空推断"。P1-2 之前，readStart2 是边解析边把舰船写进
+// shipList 的（内部逐条 `shipList.value[id] = ship`），如果第一条舰船合法、
 // 后续字段（比如 api_mst_slotitem）缺失导致抛错，shipList 已经非空——但这次
-// 加载并未成功。isReady 必须只在整个 readStart2() 跑完、且关键表都非空后才
-// 置位，抛错路径一律不会置位；developmentStore 的守卫要读这个标志，不能继续
-// 用"shipList 非空"去推断（那条用例在 developmentStore.spec.ts 里单独覆盖）。
+// 加载并未成功。P1-2 之后 readStart2 改成先在局部变量里解析完、最后才一次性
+// 发布，同样的场景下 shipList 会保持调用前的样子（通常是空表），不会再残留
+// 非空内容——但 isReady 仍然是唯一直接表达"是否就绪"的状态，不从 shipList
+// 反推：只在整个 readStart2() 跑完、且关键表都非空后才置位，抛错路径一律不会
+// 置位；developmentStore 的守卫要读这个标志，不能靠"shipList 非空"去推断
+// （那条用例在 developmentStore.spec.ts 里单独覆盖）。
 describe('G2: start2Store.isReady 显式就绪标志', () => {
   afterEach(() => vi.unstubAllGlobals())
 

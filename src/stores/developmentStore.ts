@@ -129,10 +129,12 @@ export const useDevelopmentStore = defineStore('development', () => {
   async function _initializeData() {
     // 必须先确保 start2 就绪：pool.init() 要用 shipList 把筛选条件展开成 舰ID，
     // 拿到空表就会展不开，导致后续所有出货率计算失效。这里读的是 start2Store
-    // 显式维护的 isReady 标志，不能用「shipList 非空」去推断——start2Store 是
-    // 边解析边把舰船写进 shipList 的，解析到一半失败（比如舰船已经写完、装备
-    // 数据格式不对）时 shipList 早就非空了，但那次加载并未成功；用非空当"已就绪"
-    // 会让这次失败被当成已就绪跳过，永远不会重试。
+    // 显式维护的 isReady 标志，不能用「shipList 非空」去推断——就绪与否只由
+    // isReady 显式表达，不依赖 start2Store 内部的发布顺序这类实现细节。
+    // start2Store 现在是先在局部变量里解析完、最后才一次性发布（原子发布），
+    // 解析失败时根本不会留下非空的 shipList；但即便某次实现改动了发布顺序、
+    // 又出现类似的残留状态，这里读 isReady 而不是反推 shipList 是否非空，
+    // 也不会受影响——不应该把"当前实现细节导致的现象"当成判断依据。
     //
     // 这里的判断只是一层快路径（已就绪时省一次函数调用），真正防止重复拉取/
     // 重复重建 filterButtonList 的是下面 initializeData 自身的进行中缓存——

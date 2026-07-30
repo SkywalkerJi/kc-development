@@ -67,10 +67,14 @@ describe('developmentStore 公开接口', () => {
 // 把竞态守卫改成 `if (false)`、把取最窄池的 `>=` 改成 `<=`，它们都照样全绿。
 // 这两处恰恰是本任务要修的核心缺陷，必须有能变红的断言。
 
-// G2：就绪判断不能靠"非空推断"。start2Store 是边解析边把舰船写进 shipList 的，
-// 解析到一半失败时 shipList 可能已经非空，但这次加载并未成功——用"非空"当
-// "已就绪"会把这种残留状态误判成功、跳过重试。守卫必须读 start2Store 显式
-// 维护的 isReady 标志。
+// G2：就绪判断不能靠"非空推断"。isReady 是唯一显式表达"是否就绪"的状态，
+// 不能用「shipList 非空」去反推——即便某次实现改动导致 shipList 在失败路径
+// 上残留了非空内容（P1-2 之前 start2Store 就是这样：边解析边把舰船写进
+// shipList，解析到一半失败时 shipList 早就非空了，但那次加载并未成功；
+// P1-2 之后 start2Store 已经改成原子发布，这种残留不再会发生，但下面这个
+// 守卫本来就不应该依赖"当前 start2Store 是否会留下残留状态"这类实现细节），
+// 用"非空"当"已就绪"都会把这类状态误判成功、跳过重试。守卫必须读
+// start2Store 显式维护的 isReady 标志。
 describe('initializeData 的数据加载竞态守卫', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -101,7 +105,12 @@ describe('initializeData 的数据加载竞态守卫', () => {
   // 这条锁的正是 G2 描述的错误假设本身：shipList 非空 ≠ 已就绪。把守卫改回
   // `Object.keys(start2Store.shipList).length === 0` 会让这条变红——非空的
   // shipList 会被当成"已就绪"，spy 不会被调用，下面的断言就会失败。
-  it('shipList 非空但 isReady 为 false（模拟部分解析失败残留的状态）时，仍会重新加载，不能靠"非空"误判为已就绪', async () => {
+  //
+  // 这里的 shipList[1] 是直接手写进 store 状态的，不代表真实加载会产出这种
+  // 组合（P1-2 之后的原子发布下，isReady 为 false 时 shipList 不会残留非空
+  // 内容）——这条用例只是用最直接的方式模拟"shipList 非空、isReady 为
+  // false"这个状态组合本身，验证守卫确实只认 isReady，不看 shipList。
+  it('shipList 非空但 isReady 为 false 时，仍会重新加载，不能靠"非空"误判为已就绪', async () => {
     const start2 = useStart2Store()
     start2.shipList[1] = { id: 1, name: 'A', stype: 9, ctype: 1 } as never
     expect(start2.isReady).toBe(false)
