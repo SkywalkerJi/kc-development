@@ -33,11 +33,20 @@ function validEquip(overrides: Record<string, unknown> = {}) {
   }
 }
 
+// 开发池实际引用到的 20 个 stype 代码对应的数值 id（与
+// src/core/dataSchema.js 的 REQUIRED_STYPE_IDS 同一份清单，独立抄一份的
+// 理由同 src/core/__tests__/dataSchema.spec.ts 里同名常量的注释）。
+const REQUIRED_STYPE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22]
+
 function validStart2() {
   return {
     api_mst_ship: [validShip()],
     api_mst_slotitem: [validEquip()],
-    api_mst_stype: [],
+    // 曾经允许为空，i18n 的 stypeName() ja 分支落地后它变成了 ja 舰种名的
+    // 唯一数据源，空数组不再合法；单条记录同样不合法——必须覆盖开发池
+    // 实际引用到的全部 20 个 stype 代码（见 src/core/dataSchema.js 的
+    // ⚠️ 注释与 REQUIRED_STYPE_IDS）。
+    api_mst_stype: REQUIRED_STYPE_IDS.map((id) => ({ api_id: id, api_name: `舰种${id}`, api_equip_type: {} })),
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }

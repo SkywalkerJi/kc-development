@@ -1,6 +1,6 @@
 <template>
   <div class="development-view">
-    <h2>装备开发</h2>
+    <h2>{{ $t('title.development') }}</h2>
 
     <!--
       initializeData() 失败时不渲染主内容——它依赖 developmentPools/
@@ -8,7 +8,7 @@
       的旧数据，继续渲染只会展示一个看起来能用、实际上不可信的界面。
     -->
     <div v-if="initFailed" class="init-error">
-      装备开发数据加载失败，请刷新页面重试。
+      {{ $t('error.initFailed') }}
     </div>
 
     <!-- 主要内容区域 -->
@@ -16,10 +16,10 @@
       <div class="left-panel">
         <!-- 秘书舰类型选择 -->
         <div class="secretary-select">
-          <label for="poolSelect">秘书舰类型：</label>
+          <label for="poolSelect">{{ $t('label.secretaryType') }}</label>
           <select id="poolSelect" v-model="selectedPool" @change="onPoolChanged">
             <option v-for="pool in availablePools" :key="pool.开发池名称" :value="pool">
-              {{ String(pool) }}
+              {{ poolName(pool.开发池名称) }}({{ describePool(pool) }})
             </option>
           </select>
         </div>
@@ -38,7 +38,7 @@
         -->
         <div class="resource-inputs">
           <div class="resource-group">
-            <label for="fuel">油</label>
+            <label for="fuel">{{ $t('label.fuel') }}</label>
             <input id="fuel" type="text" inputmode="numeric" :value="rawResourceText[0]"
               @input="onResourceInput(0, $event)"
               @compositionstart="onCompositionStart"
@@ -47,7 +47,7 @@
           </div>
 
           <div class="resource-group">
-            <label for="ammo">弹</label>
+            <label for="ammo">{{ $t('label.ammo') }}</label>
             <input id="ammo" type="text" inputmode="numeric" :value="rawResourceText[1]"
               @input="onResourceInput(1, $event)"
               @compositionstart="onCompositionStart"
@@ -56,7 +56,7 @@
           </div>
 
           <div class="resource-group">
-            <label for="steel">钢</label>
+            <label for="steel">{{ $t('label.steel') }}</label>
             <input id="steel" type="text" inputmode="numeric" :value="rawResourceText[2]"
               @input="onResourceInput(2, $event)"
               @compositionstart="onCompositionStart"
@@ -65,7 +65,7 @@
           </div>
 
           <div class="resource-group">
-            <label for="bauxite">铝</label>
+            <label for="bauxite">{{ $t('label.bauxite') }}</label>
             <input id="bauxite" type="text" inputmode="numeric" :value="rawResourceText[3]"
               @input="onResourceInput(3, $event)"
               @compositionstart="onCompositionStart"
@@ -79,10 +79,10 @@
           <table>
             <thead>
               <tr>
-                <th>图标</th>
-                <th>装备</th>
-                <th>出货率</th>
-                <th>最低资源要求</th>
+                <th>{{ $t('label.icon') }}</th>
+                <th>{{ $t('label.equipment') }}</th>
+                <th>{{ $t('label.hitRate') }}</th>
+                <th>{{ $t('label.minResourceReq') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -90,55 +90,55 @@
               <template v-if="groupedEquipments.showTarget">
                 <tr class="group-header">
                   <td></td>
-                  <td>目标装备</td>
+                  <td>{{ $t('group.target') }}</td>
                   <td>{{ groupedEquipments.targetTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in targetEquipments" :key="equip.id" class="target-equipment">
-                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" alt="装备图标" /></td>
-                  <td>{{ equip.name }}</td>
+                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" :alt="$t('alt.equipIcon')" /></td>
+                  <td>{{ equipName(equip.id) }}</td>
                   <td>{{ getEquipRate(equip.id) }}</td>
                   <td>{{ getResourceRequirement(equip) }}</td>
                 </tr>
               </template>
-              
+
               <!-- 其他可出货装备 -->
               <template v-if="groupedEquipments.showOther">
                 <tr class="group-header">
                   <td></td>
-                  <td>其它装备</td>
+                  <td>{{ $t('group.other') }}</td>
                   <td>{{ groupedEquipments.otherTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in otherEquipments" :key="equip.id">
-                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" alt="装备图标" /></td>
-                  <td>{{ equip.name }}</td>
+                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" :alt="$t('alt.equipIcon')" /></td>
+                  <td>{{ equipName(equip.id) }}</td>
                   <td>{{ getEquipRate(equip.id) }}</td>
                   <td>{{ getResourceRequirement(equip) }}</td>
                 </tr>
               </template>
-              
+
               <!-- 资源不足装备 -->
               <template v-if="groupedEquipments.showInsufficient">
                 <tr class="group-header">
                   <td></td>
-                  <td>资源不足导致失败</td>
+                  <td>{{ $t('group.insufficient') }}</td>
                   <td>{{ groupedEquipments.insufficientTotal }}%</td>
                   <td></td>
                 </tr>
                 <tr v-for="equip in insufficientEquipments" :key="equip.id" class="insufficient-equipment">
-                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" alt="装备图标" /></td>
-                  <td>{{ equip.name }}</td>
+                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" :alt="$t('alt.equipIcon')" /></td>
+                  <td>{{ equipName(equip.id) }}</td>
                   <td>{{ getEquipRate(equip.id) }}</td>
                   <td>{{ getResourceRequirement(equip) }}</td>
                 </tr>
               </template>
-              
+
               <!-- 全部被替换装备 -->
               <template v-if="groupedEquipments.showReplaced">
                 <tr class="group-header">
                   <td></td>
-                  <td>全部被替换</td>
+                  <td>{{ $t('group.replaced') }}</td>
                   <td>0%</td>
                   <td></td>
                 </tr>
@@ -151,8 +151,8 @@
                   上面组头的 "0%" 则是对的，参考实现那里就是个固定字符串。
                 -->
                 <tr v-for="equip in replacedEquipments" :key="equip.id" class="replaced-equipment">
-                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" alt="装备图标" /></td>
-                  <td>{{ equip.name }}</td>
+                  <td><img v-if="getEquipIcon(equip)" :src="getEquipIcon(equip)" :alt="$t('alt.equipIcon')" /></td>
+                  <td>{{ equipName(equip.id) }}</td>
                   <td>{{ getEquipRate(equip.id) }}</td>
                   <td>{{ getResourceRequirement(equip) }}</td>
                 </tr>
@@ -165,13 +165,13 @@
       <div class="right-panel">
         <!-- 装备选择区域 -->
         <div class="equipment-filter">
-          <h3>自选装备组合</h3>
+          <h3>{{ $t('panel.equipFilter') }}</h3>
           <div class="equipment-buttons">
             <!-- 按装备类型分组显示 -->
             <template v-for="(group, groupIndex) in equipmentGroups" :key="groupIndex">
               <div class="equipment-group">
-                <button 
-                  v-for="equipId in group" 
+                <button
+                  v-for="equipId in group"
                   :key="equipId"
                   :class="{
                     'selected': developmentStore.filterButtonList[equipId].select,
@@ -180,12 +180,12 @@
                   :disabled="!developmentStore.filterButtonList[equipId].enabled && !developmentStore.filterButtonList[equipId].select"
                   @click="toggleEquipment(Number(equipId))"
                 >
-                  <img 
-                    v-if="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)" 
-                    :src="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)" 
-                    alt="装备图标" 
+                  <img
+                    v-if="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)"
+                    :src="getEquipIcon(developmentStore.filterButtonList[equipId].equipInfo)"
+                    :alt="$t('alt.equipIcon')"
                   />
-                  {{ developmentStore.filterButtonList[equipId].equipInfo.name }}
+                  {{ equipName(Number(equipId)) }}
                 </button>
               </div>
             </template>
@@ -194,7 +194,7 @@
         
         <!-- 可用公式区域 -->
         <div class="development-results">
-          <h3>可用公式</h3>
+          <h3>{{ $t('panel.recipes') }}</h3>
           <table v-if="hasSelectedEquipments">
             <thead>
               <tr>
@@ -243,6 +243,8 @@ import FlagshipSearch from '@/components/FlagshipSearch.vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
+import { t, t as $t, equipName, poolName, shipName, ctypeName, stypeName, descWordSep } from '@/i18n'
+import { formatPoolDescriptor } from '@/core/poolDescriptor'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
 import { formatRateDetail, sortEquipIds, groupEquipmentsWithVisibility } from '@/core/grouping'
@@ -258,11 +260,20 @@ import {
 const developmentStore = useDevelopmentStore()
 const start2Store = useStart2Store()
 
-// Pinia 的 setup store 经由 Vue 的 UnwrapRef 暴露 developmentPools 时，
-// 会把类里的 private 字段（DevelopmentPoolClass.text）从映射类型里丢掉，
-// 导致暴露出来的元素类型结构上不再是 DevelopmentPoolClass。
-// 运行时仍是 createPools() 生成的真实实例，这里只是让类型对齐事实。
-const pools = () => developmentStore.developmentPools as unknown as DevelopmentPoolClass[]
+const pools = () => developmentStore.developmentPools
+
+// 名称查询以对象注入 core 的纯函数，core 层因此不依赖 i18n 模块。
+//
+// t 可以直接传：DescriptorCtx.t 的参数类型 DescMsgKey（core/poolDescriptor.ts）
+// 是 MsgKey 的子集，而 i18n 的 t 签名是 (key: MsgKey) => string——参数类型
+// 是逆变位置，「认所有 MsgKey」的函数天然能当「只认 DescMsgKey 子集」的函数
+// 用，不需要再转手一次包一层断言。
+const descriptorCtx = { t, shipName, ctypeName, stypeName, wordSep: descWordSep }
+
+/** 下拉框里池名后面括号里的筛选条件描述，见 core/poolDescriptor.ts。 */
+function describePool(pool: DevelopmentPoolClass): string {
+  return formatPoolDescriptor(pool.descriptor, descriptorCtx)
+}
 
 // 状态数据
 const selectedPool = ref<DevelopmentPoolClass | null>(null)
@@ -316,6 +327,13 @@ const sortAsc = ref(true)
  * 字符串比较，「总资源」会排成 101 → 121 → 90、「出货率」会排成
  * "10%","12%","2%"。这是刻意不复刻的一处 —— 与其它「参考实现会崩/结果明显
  * 不合理、web 修正」的地方同一处置原则。
+ *
+ * **必须是 computed** —— label 与「秘书舰」「池类型」两列的取值都要随语言
+ * 变化，写成常量数组的话切换语言后表头不会更新。
+ *
+ * ⚠️「秘书舰」列的 value/display 都要过 poolName()：r.池名 是中文身份键，
+ * 不翻的话整列在任何语言下都是中文。它同时意味着这一列按译名排序，
+ * 顺序随语言变化 —— 这是正确行为。
  */
 interface ResultColumn {
   key: string
@@ -323,20 +341,20 @@ interface ResultColumn {
   value: (r: DevelopResult) => number | string
   display: (r: DevelopResult) => string
 }
-const RESULT_COLUMNS: ResultColumn[] = [
-  { key: 'pool', label: '秘书舰', value: (r) => r.池名, display: (r) => r.池名 },
-  { key: 'fuel', label: '油', value: (r) => r.公式[0], display: (r) => String(r.公式[0]) },
-  { key: 'ammo', label: '弹', value: (r) => r.公式[1], display: (r) => String(r.公式[1]) },
-  { key: 'steel', label: '钢', value: (r) => r.公式[2], display: (r) => String(r.公式[2]) },
-  { key: 'bauxite', label: '铝', value: (r) => r.公式[3], display: (r) => String(r.公式[3]) },
-  { key: 'total', label: '总资源', value: (r) => r.总资源, display: (r) => String(r.总资源) },
+const RESULT_COLUMNS = computed<ResultColumn[]>(() => [
+  { key: 'pool', label: t('label.secretary'), value: (r) => poolName(r.池名), display: (r) => poolName(r.池名) },
+  { key: 'fuel', label: t('label.fuel'), value: (r) => r.公式[0], display: (r) => String(r.公式[0]) },
+  { key: 'ammo', label: t('label.ammo'), value: (r) => r.公式[1], display: (r) => String(r.公式[1]) },
+  { key: 'steel', label: t('label.steel'), value: (r) => r.公式[2], display: (r) => String(r.公式[2]) },
+  { key: 'bauxite', label: t('label.bauxite'), value: (r) => r.公式[3], display: (r) => String(r.公式[3]) },
+  { key: 'total', label: t('label.totalResource'), value: (r) => r.总资源, display: (r) => String(r.总资源) },
   {
-    key: 'type', label: '池类型',
-    value: (r) => poolTypeLabel(r.池ID), display: (r) => poolTypeLabel(r.池ID),
+    key: 'type', label: t('label.poolType'),
+    value: (r) => t(poolTypeLabel(r.池ID)), display: (r) => t(poolTypeLabel(r.池ID)),
   },
-  { key: 'hit', label: '出货率', value: (r) => r.出货率, display: (r) => `${r.出货率}%` },
-  { key: 'fail', label: '失败率', value: (r) => r.失败率, display: (r) => `${r.失败率}%` },
-]
+  { key: 'hit', label: t('label.hitRate'), value: (r) => r.出货率, display: (r) => `${r.出货率}%` },
+  { key: 'fail', label: t('label.failRate'), value: (r) => r.失败率, display: (r) => `${r.失败率}%` },
+])
 
 /**
  * 展示用的结果列表。未点表头时就是 computeRecipes 的默认顺序（那一份复刻了
@@ -345,7 +363,7 @@ const RESULT_COLUMNS: ResultColumn[] = [
  * Array.prototype.sort 自 ES2019 起保证稳定，所以同值的行会保持默认顺序。
  */
 const sortedResults = computed(() => {
-  const col = RESULT_COLUMNS.find((c) => c.key === sortColumn.value)
+  const col = RESULT_COLUMNS.value.find((c) => c.key === sortColumn.value)
   if (!col) return developmentResults.value
   const dir = sortAsc.value ? 1 : -1
   return [...developmentResults.value].sort((a, b) => {
@@ -381,15 +399,13 @@ const initFailed = ref(false)
 // 下拉框候选池直接用 store 产出的那一份 —— 准入条件（名称未重复、非负 ID、
 // 无最低资源门槛）只在 readCtypeAndPools 里写一次。此前这里把同一套条件又
 // 重写了一遍再按名称去重，是同一份规则的第二个真值源。
-const availablePools = computed(
-  () => developmentStore.selectablePools as unknown as DevelopmentPoolClass[],
-)
+const availablePools = computed(() => developmentStore.selectablePools)
 const flagshipPoolName = ref<string | null>(null)
 const flagshipMatched = computed(
   () => !flagshipPoolName.value || flagshipPoolName.value === selectedPool.value?.开发池名称,
 )
 
-function onFlagshipSelect(payload: { pool: DevelopmentPoolClass; shipName: string }) {
+function onFlagshipSelect(payload: { pool: DevelopmentPoolClass }) {
   flagshipPoolName.value = payload.pool.开发池名称
   const target = developmentStore.developmentPools.find(
     (p) => p.开发池名称 === payload.pool.开发池名称 && p.开发池ID >= 0 && !p.最低资源,
@@ -709,10 +725,10 @@ function getEquipRate(equipId: number): string {
 }
 
 function getResourceRequirement(equip: Api_EquipInfo): string {
-  const labels = ['油', '弹', '钢', '铝']
+  const keys = ['label.fuel', 'label.ammo', 'label.steel', 'label.bauxite'] as const
   let out = ''
   for (let i = 0; i < 4; i++)
-    if (equip.broken[i] > 1) out += `${labels[i]}${equip.broken[i] * 10} `
+    if (equip.broken[i] > 1) out += `${t(keys[i])}${equip.broken[i] * 10} `
   return out
 }
 

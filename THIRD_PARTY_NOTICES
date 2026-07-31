@@ -1,0 +1,42 @@
+Third-Party Notices
+====================
+
+本仓库自身以 GPLv3 授权（见仓库根目录 LICENSE）。装备/舰船/舰级译名数据
+（public/data/i18n/ 下的 items.json / ships.json / ctype.json）衍生自下列
+第三方项目，按其原始许可证单独授权，不受本仓库 GPLv3 许可证覆盖：
+
+Project: KC3Kai/kc3-translations
+Source:  https://github.com/KC3Kai/kc3-translations
+Commit:  55a0d67653dec49a0a2a8fa5e90922ff8a7f1ef2
+License: MIT
+
+本次同步（pnpm sync-i18n）生成 public/data/i18n/ 下译名数据时使用的正是
+上面这个 commit；与 public/data/i18n/_meta.json 里记录的 commit 字段一致。
+
+--------------------------------------------------------------------------
+The MIT License (MIT)
+
+Copyright (c) 2015-2021 KC3改
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--------------------------------------------------------------------------
+
+本文件由 scripts/sync-i18n.mjs 在每次 `pnpm sync-i18n` 时重新生成，请勿
+手改——手改的内容会在下一次同步时被覆盖。需要改生成规则时改
+scripts/thirdPartyNotice.mjs。

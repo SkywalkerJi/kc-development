@@ -27,14 +27,23 @@ const VALID_EQUIP = {
   api_broken: [1, 1, 1, 1],
 }
 
+// 开发池实际引用到的 20 个 stype 代码对应的数值 id（与
+// src/core/dataSchema.js 的 REQUIRED_STYPE_IDS 同一份清单，独立抄一份的
+// 理由同 src/core/__tests__/dataSchema.spec.ts 里同名常量的注释）。
+const REQUIRED_STYPE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22]
+
 // 完整、可成功解析的 start2.json 结构。注意：不能用空数组糊弄
-// api_mst_ship/api_mst_slotitem——G2 之后，字段齐全但为空数组会被
-// readStart2 判定为失败（见下面「G2」的专门用例），不再是"成功"。
+// api_mst_ship/api_mst_slotitem/api_mst_stype——G2 之后 api_mst_ship/
+// api_mst_slotitem 字段齐全但为空数组会被 readStart2 判定为失败（见下面
+// 「G2」的专门用例）；api_mst_stype 同理，i18n 的 stypeName() ja 分支落地
+// 后它变成了 ja 舰种名的唯一数据源，空数组不再是"没有影响的缺省"（见
+// src/core/dataSchema.js 里对应的 ⚠️ 注释）——单条记录也不够，必须覆盖
+// REQUIRED_STYPE_IDS 里的全部 20 个，否则同样不算"成功"。
 function goodStart2Payload() {
   return {
     api_mst_ship: [VALID_SHIP],
     api_mst_slotitem: [VALID_EQUIP],
-    api_mst_stype: [],
+    api_mst_stype: REQUIRED_STYPE_IDS.map((id) => ({ api_id: id, api_name: `舰种${id}`, api_equip_type: {} })),
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }

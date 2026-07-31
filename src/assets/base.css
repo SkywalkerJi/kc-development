@@ -44,6 +44,119 @@
   --form-control-width: 300px;
 }
 
+/*
+ * 按语言分流字体栈与标签宽度。选择器用 :lang()，值由 i18n 的 setLocale()
+ * 写在 <html lang> 上（首帧的初值来自 index.html）。
+ *
+ * 为什么必须分流：
+ * - 上面 --app-font-sans 是**简中优先**的（PingFang SC / Microsoft YaHei /
+ *   Noto Sans CJK SC）。日文与繁中共用它会渲染出错误的地区字形变体 ——
+ *   同一个码位在 SC / TC / JP 三套字体里字形不同（骨、直、类似的汉字尤其明显）。
+ * - --form-label-width 取每个语言下"秘书舰类型""秘书舰"两个标签里较长
+ *   那个的实测内容宽度（取值依据见下面三个 :lang() 块各自的注释）。英文的
+ *   "Secretary Ship Type:" 撑不下简中量出来的宽度，下拉框与搜索框左边缘
+ *   会随之错开。
+ *
+ * ⚠️ :lang(en) 的字体栈末尾额外挂了一段日文 CJK 族，这不是笔误。
+ *
+ * 真正的理由（这轮用 pnpm verify-render 真实核对过，不是继续沿用旧结论）：
+ * FlagshipSearch 的建议列表**任何语言下都同时显示假名读音**——模板里
+ * `{{ s.display }}（{{ s.yomi }}）`，display 会翻译，yomi 不会，是
+ * shipList 里的原始平假名，四语言共用同一份数据，没有对应的翻译层（也
+ * 不该有：假名读音是"这艘舰在游戏里怎么念"的身份信息，不是需要本地化
+ * 的展示文案，见 FlagshipSearch.vue 里 suggestions 的注释）。harness 实测
+ * en 下建议列表样本是 "Kongou（こんごう）"——括号里的平假名不管当前
+ * 语言是什么都会渲染，缺日文字体这几个字会直接变方块（tofu）。搜索框
+ * 本身也接受用户直接输入日文舰名/假名，同样需要这套字体才能正确回显
+ * 输入内容。这条理由不依赖任何一个下拉池的筛选条件翻不翻译得出来，
+ * 只要建议列表还在，就一直成立。
+ *
+ * 次要、这一轮之后概率更低但没有归零的理由：PoolDescriptor.shipNames 在
+ * 舰名精确匹配不到对应舰 ID 时（src/core/poolDescriptor.ts 的
+ * shipNameIds 字段，取值逻辑见该文件注释）仍然回退渲染原始日文舰名——
+ * 这条 fix（本轮 Fix 1）落地之后，用 harness 重新核对了一遍当前
+ * DevelopmentPool.json 数据，45 个下拉池的筛选条件描述里**已经 0 个残留
+ * CJK 舰名**（改造前是 11 个，如「水雷系-川内改二」曾渲染成
+ * `Torpedo - Sendai Kai Ni(川内改二)`，现在是
+ * `Torpedo - Sendai Kai Ni(Sendai Kai Ni)`）。说明当前数据下这条回退
+ * 路径没有被真实触发；但它是数据相关的、不是结构上不可能发生（游戏
+ * 更新、改名、数据源不同步都可能让某条舰名查不到对应 ID），字体栈仍然
+ * 要兜住它，不能因为"现在没触发"就当作已经不需要了。
+ *
+ * 更次要、目前用不上的理由：ctype 表在 sync-i18n 生成 en 表时，查不到译名
+ * 的条目按设计直接回填日文原文（src/i18n/index.ts 的 ctypeName 注释；实测
+ * en/ctype.json 141 条里有 18 条与 ja/ctype.json 逐字相同）。这条路径结构
+ * 上存在，但 DevelopmentPool.json 实际引用的 12 个 ctype ID 没有一个落在
+ * 这 18 条回填里——今天的池数据走不到它，只有将来新增引用这些条目的池
+ * 才会触发。
+ *
+ * （这里曾经写过"KC3 的装备表本身缺 4 条译名"，那是错的：缺的是 zh-Hans 的
+ * items.json——id 254–257，F6F-3N/F6F-5N/TBF/TBM-3D，且都是拉丁名，与 en
+ * 栈无关；en/items.json 对 start2 的 703 条装备是全译的，见
+ * public/data/i18n/_meta.json 的 counts.en.items。）
+ *
+ * 沿用上面 --app-font-sans 那条注释的教训：西文字体栈本身不含汉字，句尾
+ * 的 sans-serif 通用族不会顺着单字符回落。因此 en 栈必须显式带上日文字体
+ * 族兜底——千万不要因为「这是英文栈」把它当冗余删掉。
+ *
+ * 下面三个宽度值：改造前是按"最长标签字符数 + 0.5em 余量"心算的初值，
+ * 明确标注过"pending measurement"（那时没有可用的浏览器）。这轮用
+ * pnpm verify-render 的 labelIntrinsic 实测：临时把 label 的 width 盖成
+ * auto、读 getBoundingClientRect().width，两个标签（"秘书舰类型"所在的
+ * secretary-select 与"秘书舰"所在的 flagship-search）都没有
+ * padding/border，量出来就是纯文字宽度，不是心算出来的近似值；同时确认
+ * 两个标签在四语言下都解析到同一个 16px 根字号，共用一个 em 值这件事本身
+ * 没有前提被打破。取两者中较长那个的实测宽度，加 0.5em 作为标签盒子右侧
+ * 余量（这个 0.5em 边距的由来见 :root 里 --form-label-width 定义处的
+ * 注释）。ja/zh-Hant 测出来的值与心算值几乎完全重合（相差不到 0.01em），
+ * 保留原值不变；en 的心算值（11em）比实测明显偏大，已经调小，理由与实测
+ * 数字见下面 :lang(en) 块。
+ */
+:root:lang(ja) {
+  /* "秘書艦タイプ："（secretary-select 的标签，比 flagship-search 的
+     "秘書艦" 长）实测内容宽度 112.02px = 7.00em（16px 根字号），
+     + 0.5em 余量 = 7.5em。与改造前按 7 个全角字符心算的值巧合完全重合，
+     不用改。 */
+  --form-label-width: 7.5em;
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,
+    "Noto Sans CJK JP", "Source Han Sans JP", sans-serif;
+}
+
+:root:lang(zh-Hant) {
+  /* "秘書艦類型："实测内容宽度 96.02px = 6.00em，+ 0.5em 余量 = 6.5em。
+     与改造前按 6 个全角字符心算的值巧合完全重合，不用改；理由同上面
+     ja 块。 */
+  --form-label-width: 6.5em;
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC",
+    "Source Han Sans TC", sans-serif;
+}
+
+:root:lang(en) {
+  /* "Secretary Ship Type:" 实测内容宽度 151.17px = 9.448em，+ 0.5em
+     余量 ≈ 9.95em。改造前的 11em 是按"20 个拉丁字符，均宽约 0.5em"心算
+     的，比实测明显偏大——拉丁字符宽度并不均匀（'i'/'l' 比 'W'/'S' 窄
+     很多），心算的均宽假设本身就是这次偏差的来源。
+     即使调紧到这个实测值，"Secretary Ship Type:" 159px（新值）+ 300px
+     控件 = 459px，仍然超过 .left-panel 在 1024px 视口下的实测宽度
+     428.39px（1400px 视口下是 540px，459px 放得下）——换句话说无论标签
+     宽度取多紧，en 在 1024px 下都会换行，这不是这个变量能解决的问题。
+     换行本身不再是要修的缺陷：真正的缺陷是换行后建议列表跟不跟得上
+     输入框，那个已经在 FlagshipSearch.vue 的 .field 里独立修掉了
+     （Fix 5），与这里的宽度取值无关。 */
+  --form-label-width: 9.95em;
+  /* 日文尾巴（Hiragino Sans / Yu Gothic / Noto Sans CJK JP）不是抄错块——
+     见上面那条 ⚠️ 注释：en 下建议列表的假名读音、搜索框可接受的日文
+     原名输入，都需要这些字体兜底，且不依赖池描述里的舰名翻不翻译得出来。 */
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,
+    "Noto Sans CJK JP", "Source Han Sans JP", sans-serif;
+}
+
 body {
   margin: 0;
   padding: 0;

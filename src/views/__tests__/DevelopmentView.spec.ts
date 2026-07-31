@@ -34,6 +34,7 @@ import DevelopmentView from '../DevelopmentView.vue'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import { createPools } from '@/core/developmentPool'
+import { setLocale, __resetI18nForTest } from '@/i18n'
 
 // 等待 onMounted 里 `await developmentStore.initializeData()`（已 mock，
 // 立即 resolve）的续体跑完，并让 Vue 把由此产生的状态变化（selectedPool/
@@ -423,6 +424,15 @@ describe('DevelopmentView — 「可用公式」的选中语义', () => {
     expect(rows[1].classList.contains('result-selected')).toBe(false)
     // 抬油那条：[30,30,10,30]
     expect(container!.querySelector<HTMLInputElement>('#fuel')!.value).toBe('30')
+
+    // 「池类型」列（RESULT_COLUMNS 第 7 个，index 6）渲染的是
+    // t(poolTypeLabel(r.池ID)) 这个组合的结果，不是 poolTypeLabel 单独返回的
+    // key。beforeEach 里的池是 开发池ID: 3（油钢池），两条候选配方都来自它，
+    // 所以两行都应该渲染成 zh-Hans 下的原词「油钢」。只测 poolTypeLabel 返回
+    // 的 key 对不对（smoke.spec.ts）测不到这一层组合——把 key 传错、或者漏包
+    // 一层 t()，这里才会红。
+    expect(rows[0].querySelectorAll('td')[6].textContent).toBe('油钢')
+    expect(rows[1].querySelectorAll('td')[6].textContent).toBe('油钢')
   })
 
   it('再次点击已选中的行不会覆盖用户手工输入的资源值', async () => {
@@ -589,5 +599,177 @@ describe('DevelopmentView — 「可用公式」的选中语义', () => {
     await flush()
     expect(fuelInput.value).toBe('30')
     expect(rows[0].classList.contains('result-selected')).toBe(true)
+  })
+})
+
+// Task 7：锁定这次改造最容易漏掉的三处——下拉框的拼句、装备名的翻译（而不是
+// 原始 equip.name/日文原名，两者在名称表未加载时字面相同，测不出差别，必须
+// 真的切一次语言）、以及「秘书舰」列过 poolName()。四个分组 <td> 用的是同一
+// 行模板表达式，这里只挑「目标装备」「其它装备」两组 + 装备按钮做代表，
+// 「资源不足」「全部被替换」两组留给人工核对（见任务报告）。
+describe('DevelopmentView — i18n 接线（Task 7）', () => {
+  let pinia: Pinia
+  let app: App | null = null
+  let container: HTMLElement | null = null
+
+  beforeEach(() => {
+    pinia = createPinia()
+    setActivePinia(pinia)
+    __resetI18nForTest()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    app?.unmount()
+    container?.remove()
+    app = null
+    container = null
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    __resetI18nForTest()
+  })
+
+  function mount() {
+    app = createApp(DevelopmentView)
+    app.use(pinia)
+    app.mount(container as HTMLElement)
+  }
+
+  it('下拉框显示 poolName()+formatPoolDescriptor 拼出的描述，不是只剩池名（回归 Task 6→7 交接时 String(pool) 的退化态）', async () => {
+    const developmentStore = useDevelopmentStore()
+    const start2Store = useStart2Store()
+    start2Store.equipList = {}
+
+    const pools = createPools([
+      { 开发池名称: '测试池', 开发池ID: 3, 舰ID: [], 出货率: {} },
+    ])
+    // createPools 刻意不跑 init()（那需要 ctypeMap/shipList，是 developmentPool.spec.ts
+    // 的范围），这里直接给 descriptor 赋值，只测 View 侧「取 descriptor → 拼句 →
+    // 翻译」这一段接线。
+    pools[0].descriptor = {
+      stypes: ['DD'], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [],
+    }
+    developmentStore.developmentPools = pools
+    developmentStore.existPool = ['测试池']
+    developmentStore.filterButtonList = {}
+    vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
+
+    mount()
+    await flush()
+
+    // zh-Hans 下 stypeName('DD') = '驱逐舰'。若下拉框退化回改造前的
+    // `{{ String(pool) }}`（只有池名，见 developmentPool.ts toString()），
+    // 或者漏了 stypeName 翻译（显示原始代码 'DD'），这条断言都会红。
+    const option = container!.querySelector('#poolSelect option')!
+    expect(option.textContent?.trim()).toBe('测试池(驱逐舰)')
+  })
+
+  it('切到 en 后：装备名（目标组/其它组/按钮）、下拉框池名、「秘书舰」列全部走翻译，不是原始中文', async () => {
+    const developmentStore = useDevelopmentStore()
+    const start2Store = useStart2Store()
+
+    start2Store.equipList = {
+      100: { id: 100, name: '装备甲', types: [0, 0, 1, 1], broken: [1, 1, 1, 1] },
+      200: { id: 200, name: '装备乙', types: [0, 0, 1, 1], broken: [1, 1, 1, 1] },
+    } as never
+    // '炮战系-意' 是 i18n/names/poolNames.ts 里的真实条目（en: 'Gunnery - Italian'）。
+    // 用真实池名而不是随手起的测试名：自造的名字不在 POOL_NAMES 表里，
+    // poolName() 未命中时会原样回退，看不出翻译到底有没有真的接上。
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: '炮战系-意', 开发池ID: 3, 舰ID: [], 出货率: { '100': 5, '200': 5 } },
+    ])
+    developmentStore.existPool = ['炮战系-意']
+    developmentStore.filterButtonList = {
+      100: { equipInfo: start2Store.equipList[100], select: false, enabled: true },
+      200: { equipInfo: start2Store.equipList[200], select: false, enabled: true },
+    } as never
+    vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // ships/ctype 内容与这条用例无关（只关心装备名/池名/秘书舰列），但
+      // Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表现在会被
+      // isValidNameTable 拒绝，setLocale 会失败。随便给一条非空内容。
+      const table: Record<string, unknown> = {
+        'i18n/en/items.json': { 100: 'Equip A (EN)', 200: 'Equip B (EN)' },
+        'i18n/en/ships.json': { 1: 'Unrelated' },
+        'i18n/en/ctype.json': { 1: 'Unrelated' },
+      }
+      const key = Object.keys(table).find((k) => String(url).includes(k))
+      if (!key) throw new Error(`未预期的请求: ${url}`)
+      return { ok: true, status: 200, json: async () => table[key] } as unknown as Response
+    }))
+    expect(await setLocale('en')).toBe(true)
+
+    mount()
+    await flush()
+
+    // 下拉框：池名过 poolName()，不是 DevelopmentPoolData 里的中文原名。
+    const option = container!.querySelector('#poolSelect option')!
+    expect(option.textContent).toContain('Gunnery - Italian')
+    expect(option.textContent).not.toContain('炮战系-意')
+
+    // 未选中任何装备时，两件装备的合并出货率都是 5%（大于 0）、资源门槛
+    // （broken=1 → 阈值10，基线资源就是10）都满足，双双落在「其它装备」组。
+    const otherRows = [...container!.querySelectorAll('.equipment-list tbody tr')]
+      .filter((r) => !r.classList.contains('group-header'))
+    expect(otherRows.map((r) => r.querySelectorAll('td')[1].textContent)).toEqual([
+      'Equip A (EN)', 'Equip B (EN)',
+    ])
+
+    // 装备按钮同样过 equipName()，不是 filterButtonList[id].equipInfo.name。
+    const buttons = [...container!.querySelectorAll<HTMLButtonElement>('.equipment-buttons button')]
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Equip A (EN)', 'Equip B (EN)'])
+
+    // 选中装备甲：它进入「目标装备」组，同时「可用公式」表出现——
+    // 顺带验证「秘书舰」列的 display 也过了 poolName()。
+    buttons[0].click()
+    await flush()
+
+    const targetRow = container!.querySelector('.target-equipment')!
+    expect(targetRow.querySelectorAll('td')[1].textContent).toBe('Equip A (EN)')
+
+    const secretaryCell = container!.querySelector('.development-results tbody tr td')!
+    expect(secretaryCell.textContent).toBe('Gunnery - Italian')
+
+    // 实时切换语言（不重新挂载、不重新点按钮）——这才是 RESULT_COLUMNS 必须
+    // 是 computed 而不是常量数组的理由本身：上面两个断言只证明了"用哪个
+    // locale 挂载就渲染成哪个 locale"，证不了"挂载之后再切换，界面会不会
+    // 跟着动"。若 RESULT_COLUMNS 退化回普通常量数组，下面的表头断言会先
+    // 变红：label 是数组创建那一刻 `t('label.secretary')` 求值出的字符串，
+    // 冻在数组里，不会随后续切换重算。
+    //
+    // 「秘书舰」列的**内容**断言则不会——`display: (r) => poolName(r.池名)`
+    // 本身是个闭包，不管 RESULT_COLUMNS 是不是 computed，它都在每次渲染时
+    // 被模板重新调用一遍，调用时读到的是当下的 localeRef，跟这个闭包是何时
+    // 创建的无关。所以这条内容断言测的是另一件事——poolName() 本身的响应
+    // 性——而不是 RESULT_COLUMNS 该不该是 computed；下面留着它只是顺带
+    // 覆盖，不要指望它能在 RESULT_COLUMNS 退化时报警。
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // zh-Hans 不请求 ctype.json（简体舰级名走 developmentStore.ctypeMap，
+      // 见 i18n/names/load.ts 的 wantCtype 判断），所以这里只需要两个文件。
+      // 内容本身与这条用例无关（只关心表头/池名，不关心装备/舰船译名），
+      // 但 Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会被
+      // isValidNameTable 拒绝，setLocale 会失败。
+      const table: Record<string, unknown> = {
+        'i18n/zh-Hans/items.json': { 1: 'x' },
+        'i18n/zh-Hans/ships.json': { 1: 'x' },
+      }
+      const key = Object.keys(table).find((k) => String(url).includes(k))
+      if (!key) throw new Error(`未预期的请求: ${url}`)
+      return { ok: true, status: 200, json: async () => table[key] } as unknown as Response
+    }))
+    expect(await setLocale('zh-Hans')).toBe(true)
+    await flush()
+
+    const headers = [...container!.querySelectorAll('.development-results th')]
+    expect(headers.some((h) => h.textContent?.startsWith('秘书舰'))).toBe(true)
+
+    // 「秘书舰」列的内容也跟着变回中文——poolName('炮战系-意') 在 zh-Hans 下
+    // 就是身份键本身（POOL_NAMES 的 zh-Hans 一列恒等于键），与切换前的英文
+    // 'Gunnery - Italian' 形成对照，证明 display 真的重新求值了，不是碰巧
+    // 没变。
+    const secretaryCellAfter = container!.querySelector('.development-results tbody tr td')!
+    expect(secretaryCellAfter.textContent).toBe('炮战系-意')
   })
 })

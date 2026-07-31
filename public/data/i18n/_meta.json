@@ -1,0 +1,27 @@
+{
+  "source": "https://github.com/KC3Kai/kc3-translations",
+  "license": "MIT",
+  "commit": "55a0d67653dec49a0a2a8fa5e90922ff8a7f1ef2",
+  "counts": {
+    "ja": {
+      "items": 0,
+      "ships": 0,
+      "ctype": 141
+    },
+    "zh-Hans": {
+      "items": 699,
+      "ships": 800,
+      "ctype": 0
+    },
+    "zh-Hant": {
+      "items": 703,
+      "ships": 800,
+      "ctype": 141
+    },
+    "en": {
+      "items": 703,
+      "ships": 800,
+      "ctype": 141
+    }
+  }
+}

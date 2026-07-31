@@ -36,11 +36,33 @@ function validEquip(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function validPayload(shipOverrides = {}, equipOverrides = {}) {
+// 一条能通过全部校验的最小合法舰种记录——api_mst_stype 曾经允许为空数组，
+// i18n 的 stypeName() ja 分支落地后它变成了 ja 舰种名的唯一数据源，
+// 空数组/缺 api_name 都不再合法（见 dataSchema.js 里对应的 ⚠️ 注释）。
+function validStype(overrides: Record<string, unknown> = {}) {
+  return { api_id: 1, api_name: '海防艦', api_equip_type: {}, ...overrides }
+}
+
+// 开发池实际引用到的 20 个 stype 代码对应的数值 id（与 dataSchema.js 里
+// REQUIRED_STYPE_IDS 的键集合同一份清单——这里独立抄一份而不是 import
+// 它，是因为 REQUIRED_STYPE_IDS 本身没有具名导出（校验器的内部实现细节，
+// 不是这个模块对外承诺的接口），测试拿到的应该是"这 20 个 id 各自独立
+// 核对过、写死在测试里"的清单，不是"信任被测代码自己声称的清单"）。
+const REQUIRED_STYPE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22]
+
+/** 覆盖全部 20 个必需 stype id 的最小合法表——validPayload() 的默认值，
+ *  单条覆盖（如 validStype({ api_id: 99 })）想测别的畸形维度时，用
+ *  validPayload({}, {}, [...validStypeTable(), 那一条坏记录]) 之类的写法
+ *  单独替换 api_mst_stype，不需要每次都重新拼一遍 20 条。 */
+function validStypeTable() {
+  return REQUIRED_STYPE_IDS.map((id) => validStype({ api_id: id, api_name: `舰种${id}` }))
+}
+
+function validPayload(shipOverrides = {}, equipOverrides = {}, stypeOverride?: Record<string, unknown>[]) {
   return {
     api_mst_ship: [validShip(shipOverrides)],
     api_mst_slotitem: [validEquip(equipOverrides)],
-    api_mst_stype: [],
+    api_mst_stype: stypeOverride ?? validStypeTable(),
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }
@@ -88,9 +110,87 @@ describe('validateStart2Payload', () => {
     expect(result.errors.join('\n')).toMatch(/api_mst_slotitem 为空数组/)
   })
 
-  it('api_mst_stype / api_mst_equip_ship 允许为空数组（只是打孔装备计算的辅助数据）', () => {
-    const ok = { ...validPayload(), api_mst_stype: [], api_mst_equip_ship: [] }
+  // 曾经允许为空（"它只是辅助数据"），i18n 的 stypeName() ja 分支落地后
+  // api_mst_stype 变成了 ja 舰种名的唯一数据源，空数组会让 ja 下全部舰种名
+  // 回退成 stype 代码本身而不是日文名——不再是"没有影响的缺省"。
+  it('api_mst_stype 是空数组时拒绝（字段存在但为空，i18n 的 stypeName ja 分支拿不到任何日文舰种名）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_mst_stype 为空数组/)
+  })
+
+  it('api_mst_stype 记录缺少 api_name 时拒绝（stypeName 的 ja 分支读它作为日文舰种名）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: undefined })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
+  })
+
+  it('api_mst_stype 记录 api_name 为空字符串时拒绝（不只是缺失这一种"没有名字"）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: '' })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
+  })
+
+  // 本轮 Fix 6：只查 `=== ''` 曾经放过纯空白名字——'   ' 这种记录此前 ok:
+  // true，运行时渲染出一段空白而不是触发"查不到名字"的兜底。与
+  // src/i18n/names/load.ts 的 isValidNameTable 保持一致（同样用 trim()）。
+  it.each(['   ', '\t', '\n　'])('api_mst_stype 记录 api_name 为纯空白字符串 %p 时拒绝', (whitespaceName) => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: whitespaceName })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
+  })
+
+  it.each([0, -1, 1.5, '1', null])('api_mst_stype 记录 api_id=%p（非正整数）时拒绝', (badId) => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_id: badId })] }
+    expect(validateStart2Payload(bad).ok).toBe(false)
+  })
+
+  it('两条 api_mst_stype 记录 api_id 相同时拒绝', () => {
+    const bad = {
+      ...validPayload(),
+      api_mst_stype: [...validStypeTable(), validStype({ api_id: 1, api_name: '重复的海防艦' })],
+    }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 与其他记录重复/)
+  })
+
+  it('api_mst_stype 表只有一条记录时拒绝——非空不等于覆盖了开发池实际引用到的舰种', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype()] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_mst_stype 缺少开发池实际引用到的舰种/)
+    // 缺的应该是除了 1(DE) 之外的全部 19 个，包含具体报出 2(DD)
+    expect(result.errors.join('\n')).toMatch(/2\(DD\)/)
+  })
+
+  it('api_mst_stype 表覆盖全部 20 个必需 id 时通过（validStypeTable() 本身就是这条用例的证明，这里显式断言一次）', () => {
+    const ok = { ...validPayload(), api_mst_stype: validStypeTable() }
     expect(validateStart2Payload(ok).ok).toBe(true)
+  })
+
+  // 上游在 2026-07 把 api_mst_equip_ship 从「数组 + api_equip_type 数值数组」
+  // 改成了「以舰ID为键的对象 + api_equip_type 对象映射」。本项目从不消费这张表
+  // （它此前只喂给 ship.打孔装备/打孔装备图标，而那两个字段全项目只写不读，
+  // 已随本次改动一并删除），所以校验器也不应该因为它的形状而拒绝整份数据 ——
+  // 否则就是「为了满足一个自己写的校验器，去适配一份自己根本不读的数据」。
+  // api_mst_equip_exslot_ship 同理。
+  it('api_mst_equip_ship / api_mst_equip_exslot_ship 的形状不参与校验', () => {
+    const newUpstreamShape = {
+      ...validPayload(),
+      api_mst_equip_ship: { '100': { api_equip_type: { '1': null, '27': [268] } } },
+      api_mst_equip_exslot_ship: { '10': { api_req_level: 'x' } },
+    }
+    expect(validateStart2Payload(newUpstreamShape).errors).toEqual([])
+
+    const absent: Record<string, unknown> = { ...validPayload() }
+    delete absent.api_mst_equip_ship
+    delete absent.api_mst_equip_exslot_ship
+    expect(validateStart2Payload(absent).errors).toEqual([])
   })
 
   // 类别 2：舰船记录缺 ID / ID 不是正整数 / ID 重复
@@ -230,20 +330,15 @@ describe('validateStart2Payload', () => {
     expect(validateStart2Payload({ ...validPayload(), api_mst_slotitem: [validEquip({ api_broken: [1, 1, 1, null] })] }).ok).toBe(false)
   })
 
-  it('api_mst_equip_exslot_ship 的值缺少合法 api_req_level 时拒绝', () => {
-    const bad = {
-      ...validPayload(),
-      api_mst_equip_exslot_ship: { '10': { api_req_level: 'x' } },
-    }
-    expect(validateStart2Payload(bad).ok).toBe(false)
-  })
-
-  it('api_mst_stype / api_mst_equip_ship 记录字段不对时拒绝', () => {
+  // 这里原本还有两条断言：「api_mst_equip_exslot_ship 的值缺少合法
+  // api_req_level 时拒绝」，以及上面这条里针对 api_mst_equip_ship 记录字段的
+  // 那一半。两者随对应校验一并删除 —— 校验没了，断言就没有对象可测；留着
+  // 只会变成永远为真的空壳。删除理由见本文件上方
+  // 「api_mst_equip_ship / api_mst_equip_exslot_ship 的形状不参与校验」
+  // 那条测试的注释。
+  it('api_mst_stype 记录字段不对时拒绝', () => {
     const badStype = { ...validPayload(), api_mst_stype: [{ api_id: 'x', api_equip_type: {} }] }
     expect(validateStart2Payload(badStype).ok).toBe(false)
-
-    const badEquipShip = { ...validPayload(), api_mst_equip_ship: [{ api_ship_id: 1, api_equip_type: 'x' }] }
-    expect(validateStart2Payload(badEquipShip).ok).toBe(false)
   })
 })
 

@@ -154,10 +154,7 @@ export const useDevelopmentStore = defineStore('development', () => {
     )
     if (!candidates.length || !start2Store.shipList[shipId]) return null
     const pool = candidates.reduce((min, cur) => (cur.舰ID.length >= min.舰ID.length ? min : cur))
-    // ref<DevelopmentPoolClass[]>() 令 .value 的元素类型经 Vue 的 UnwrapRef 丢失
-    // 私有字段 text，结构上不再是 DevelopmentPoolClass（同 DevelopmentView.vue 里
-    // pools() 的处理）。运行时仍是 createPools() 生成的真实实例。
-    return { pool: pool as unknown as DevelopmentPoolClass, shipInfo: start2Store.shipList[shipId] }
+    return { pool, shipInfo: start2Store.shipList[shipId] }
   }
 
   // 内部实现：外部一律经 initializeData 的进行中缓存调用（同 start2Store 的模式）。

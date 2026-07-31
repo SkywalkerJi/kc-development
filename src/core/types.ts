@@ -1,3 +1,5 @@
+import type { MsgKey } from '@/i18n/types'
+
 /** 资源四元组：油、弹、钢、铝 */
 export type Resources = readonly [number, number, number, number]
 
@@ -39,12 +41,22 @@ export enum ShipType {
   敌AO = 15, AV = 16, LHA = 17, CVB = 18, AR = 19, AS = 20, CT = 21, AO = 22,
 }
 
-/** 池类型的中文标签。参考实现里越界会抛异常，此处保持同样严格。 */
-export function poolTypeLabel(id: PoolType): string {
+/**
+ * 池类型对应的消息 key。参考实现里越界会抛异常，此处保持同样严格。
+ *
+ * 返回 key 而不是文字：core 层不该产出面向用户的文案，翻译由展示层做。
+ *
+ * ⚠️ 它同时是「可用公式」表「池类型」列的**排序取值**（见 DevelopmentView 的
+ * RESULT_COLUMNS）。改成 key 之后，那一列必须按**翻译后的文字**排序而不是按
+ * key 排 —— 否则英文界面下会按 poolType.ammo / poolType.bauxite 这种内部
+ * 标识符的字母序排，与用户看到的文字对不上。排序结果因此随语言变化，这是
+ * 正确行为，不是 bug。
+ */
+export function poolTypeLabel(id: PoolType): MsgKey {
   switch (id) {
-    case 1: return '铝'
-    case 2: return '弹'
-    case 3: return '油钢'
+    case 1: return 'poolType.bauxite'
+    case 2: return 'poolType.ammo'
+    case 3: return 'poolType.fuelSteel'
     default: throw new Error(`无效的池ID: ${id}`)
   }
 }

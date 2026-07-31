@@ -42,21 +42,32 @@ describe('DevelopmentPoolClass.init', () => {
     expect(p.舰ID).toEqual([1, 2])
   })
 
-  it('无任何筛选条件时 toString 给出兜底文案', () => {
+  it('toString 只返回池名，不再拼描述（描述改由 formatPoolDescriptor 产出，见 poolDescriptor.spec.ts）', () => {
     const p = createPools([{ 开发池名称: 'X', 开发池ID: 1, 出货率: {} }])[0]
     p.init(ctypeMap, noopGetIDs, shipList)
-    expect(p.toString()).toBe('X(过滤条件有点问题)')
+    expect(p.toString()).toBe('X')
+    expect(p.descriptor).toEqual({
+      stypes: [], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [],
+      minResources: undefined,
+    })
   })
 
-  it('toString 拼出筛选条件描述', () => {
+  it('descriptor.shipIds 是 舰种/舰型/舰名 展开前的原始 舰ID —— 与改造前 text 构建阶段读到的值一致（构建发生在四段展开逻辑之前）', () => {
     const p = createPools([
-      { 开发池名称: 'X', 开发池ID: 1, 舰种: ['BB'], 最低资源: [0, 0, 300, 0], 出货率: {} },
+      { 开发池名称: 'X', 开发池ID: 1, 舰ID: [1], 舰种: ['BB'], 最低资源: [0, 0, 300, 0], 出货率: {} },
     ])[0]
     p.init(ctypeMap, noopGetIDs, shipList)
-    expect(p.toString()).toBe('X(BB,最低钢300)')
+    // 展开后 舰ID 含 BB 命中的 1、2（见上面「刻意不去重」用例），但 descriptor.shipIds
+    // 必须只保留展开前就有的 [1]。
+    expect(p.舰ID).toEqual([1, 1, 2])
+    expect(p.descriptor).toEqual({
+      stypes: ['BB'], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [1],
+      minResources: [0, 0, 300, 0],
+    })
+    expect(p.toString()).toBe('X')
   })
 
-  // 以下三条覆盖上面用例的盲区：
+  // 以下几条覆盖上面用例的盲区：
   // 舰名路径（99 个池里 38 个用它，是主路径）此前从未被触发，
   // id >= 1500 的排除此前是空覆盖 —— 把那个判断整段删掉，原有断言照样通过。
 
@@ -69,11 +80,28 @@ describe('DevelopmentPoolClass.init', () => {
     expect(p.舰ID).toEqual([1, 2, 1, 1])
   })
 
-  it('舰名以 exact=false 调用 getIDs', () => {
+  it('舰名以 exact=false 调用 getIDs 展开 舰ID —— descriptor.shipNameIds 的 exact=true 精确查询是另一次调用，不影响这一条', () => {
     const calls: Array<[string[], boolean]> = []
     const p = createPools([{ 开发池名称: 'X', 开发池ID: 1, 舰名: ['長門'], 出货率: {} }])[0]
     p.init(ctypeMap, (names, exact) => { calls.push([names, exact]); return [] }, shipList)
-    expect(calls).toEqual([[['長門'], false]])
+    // descriptor 构建（含 shipNameIds 的精确查询）在 舰ID 展开的六段逻辑
+    // 之前跑，所以 exact=true 那次先发生；exact=false 的展开调用照旧收到
+    // 未展开的原始 舰名 数组，这条 pinned 行为与改造前一致。
+    expect(calls).toEqual([[['長門'], true], [['長門'], false]])
+  })
+
+  it('descriptor.shipNameIds 逐名精确匹配（exact=true）：命中记 ID，查不到记 null——Fix 1', () => {
+    const p = createPools([
+      { 开发池名称: 'X', 开发池ID: 1, 舰名: ['長門', '未知舰'], 出货率: {} },
+    ])[0]
+    // 桩 getIDs：只有 exact=true 且传入单个已知名字时才返回命中，模拟
+    // start2Store.ts 精确匹配分支「一次只问一个名字」的真实行为。
+    p.init(
+      ctypeMap,
+      (names, exact) => (exact && names.length === 1 && names[0] === '長門' ? [1] : []),
+      shipList,
+    )
+    expect(p.descriptor.shipNameIds).toEqual([1, null])
   })
 
   it('id >= 1500 的舰即使筛选条件匹配也不进入舰ID', () => {
