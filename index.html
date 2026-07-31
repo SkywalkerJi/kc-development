@@ -41,9 +41,8 @@
          ⚠️ 站名在**本文件里就有八份副本**（<title>、description、
          og:site_name、og:title、og:description、og:image:alt、JSON-LD 的
          name、noscript 的 h1），JSON-LD 的 alternateName 里还另有 ja 与
-         en 两份；这些全是静态
-         文本，没有任何测试或核验盯着它们。改站名前先读
-         docs/development.md 的「SEO」一节，那里列了必须同步的全部位置——
+         en 两份；这些全是静态文本，没有任何测试或核验盯着它们。改站名前先
+         读 docs/development.md 的「SEO」一节，那里列了必须同步的全部位置——
          这里刻意不再重复一份清单，两处清单各自过时是这个仓库已经踩过的坑。 -->
     <title>舰队 Collection 装备开发计算器</title>
     <meta name="description" content="舰队 Collection 装备开发计算器：选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。支持简体中文、繁體中文、日本語、English。">
@@ -52,16 +51,31 @@
     <!-- 规范 URL / og:url / og:image 必须是**绝对**地址：抓取器拿到的只是
          这份 HTML 的文本，不会替你解析相对路径。带尾斜杠、不带 hash——
          路由用的是 createWebHashHistory，`#/` 之后的部分对抓取器没有意义，
-         写进去只会让同一个页面产生多个看起来不同的规范地址。 -->
-    <link rel="canonical" href="https://skywalkerji.github.io/kc-development-tools/">
+         写进去只会让同一个页面产生多个看起来不同的规范地址。
+
+         ⚠️ `xn--uesr8qr0rdwk.cn` 不是乱码，是中文域名 **御坂美琴.cn** 的
+         punycode 形式。该自定义域名配置在用户根仓库 skywalkerji.github.io
+         上（本仓库没有 CNAME 文件），因此本项目页的最终地址是
+         https://御坂美琴.cn/kc-development-tools/。
+
+         为什么不写 skywalkerji.github.io：那个地址会 **301** 跳到上面这个
+         域名（实测 Location 头如此）。canonical 指向一个会重定向的地址是
+         自相矛盾的——规范地址的定义就是「最终地址」；og:image 更吃亏，
+         部分社交抓取器不跟随重定向，分享卡片会直接不出图。
+
+         为什么写 punycode 而不是中文原文：这几个值是给机器读的，ASCII
+         形式无歧义、不依赖抓取器是否做 IDN 规范化。面向人的地方（README
+         的「在线使用」链接、分享卡片上印的那行字）用中文原文。 -->
+    <link rel="canonical" href="https://xn--uesr8qr0rdwk.cn/kc-development-tools/">
 
     <!-- %BASE_URL% 由 vite 在构建期替换成 vite.config.ts 里的 base
          （生产是 /kc-development-tools/，开发是 /）。
 
          ⚠️ 这里原本写的是 `/favicon.ico`，两个问题叠在一起：那个文件从来
-         就不存在，而且根绝对路径在 GitHub Pages **项目页**上会指到
-         skywalkerji.github.io/favicon.ico——那是用户根仓库的地盘，不是本
-         仓库。凡是指向自家静态资源的路径都要走 %BASE_URL%，不能写成 /。 -->
+         就不存在，而且根绝对路径在 **项目页**部署下会指到域名根
+         （御坂美琴.cn/favicon.ico）——那是用户根仓库
+         skywalkerji.github.io 的地盘，不是本仓库。凡是指向自家静态资源的
+         路径都要走 %BASE_URL%，不能写成 /。 -->
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg">
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png">
 
@@ -75,11 +89,11 @@
     <meta property="og:site_name" content="舰队 Collection 装备开发计算器">
     <meta property="og:title" content="舰队 Collection 装备开发计算器">
     <meta property="og:description" content="投入资源看出货率，选中装备反推配方。支持简体中文、繁體中文、日本語、English 的舰队 Collection 装备开发计算器。">
-    <meta property="og:url" content="https://skywalkerji.github.io/kc-development-tools/">
+    <meta property="og:url" content="https://xn--uesr8qr0rdwk.cn/kc-development-tools/">
     <!-- 1200×630 的 PNG，源文件是 scripts/assets/og-image.html，由
          scripts/gen-assets.mjs 生成（改了源要重跑一次、把新 PNG 一起提交）。
          必须是位图：X 不接受 SVG 作 og:image。 -->
-    <meta property="og:image" content="https://skywalkerji.github.io/kc-development-tools/og-image.png">
+    <meta property="og:image" content="https://xn--uesr8qr0rdwk.cn/kc-development-tools/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="舰队 Collection 装备开发计算器">
@@ -101,9 +115,9 @@
       "@type": "WebApplication",
       "name": "舰队 Collection 装备开发计算器",
       "alternateName": ["艦隊これくしょん 装備開発計算機", "KanColle Equipment Development Calculator"],
-      "url": "https://skywalkerji.github.io/kc-development-tools/",
+      "url": "https://xn--uesr8qr0rdwk.cn/kc-development-tools/",
       "description": "选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。",
-      "image": "https://skywalkerji.github.io/kc-development-tools/og-image.png",
+      "image": "https://xn--uesr8qr0rdwk.cn/kc-development-tools/og-image.png",
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript",

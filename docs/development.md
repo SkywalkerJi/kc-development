@@ -84,8 +84,16 @@ pnpm verify-render   # 内部先 pnpm build，再驱动真实 headless Chrome
 
 - 指向自家静态资源的路径一律走 `%BASE_URL%`（vite 构建期替换成 `base`）。写成 `/xxx` 在 GitHub Pages 项目页上会指到域名根，那是**别的仓库**的地盘
 - `canonical` / `og:url` / `og:image` 必须是绝对 URL，带尾斜杠、不带 hash
-- `public/robots.txt` 在项目页部署下**读不到**（爬虫只读域名根的那一份），`sitemap.xml` 需要在 Search Console 手动提交，两者都不要当成已生效的 SEO 成果 —— 详见各自文件内的说明
+- `public/robots.txt` 在项目页部署下**读不到**（爬虫只读域名根的那一份，而那份由用户根仓库提供、当前是 404），`sitemap.xml` 需要在 Search Console 手动提交，两者都不要当成已生效的 SEO 成果 —— 详见各自文件内的说明
 - 没有 `hreflang`：四种语言共用同一个 URL，写了是假信息
+
+### 站点地址
+
+线上最终地址是 **`https://御坂美琴.cn/kc-development-tools/`**。自定义域名配置在用户根仓库 `skywalkerji.github.io` 上（本仓库没有 `CNAME`），`https://skywalkerji.github.io/kc-development-tools/` 会 **301** 跳到它。
+
+因此所有机器读的绝对地址（`canonical` / `og:url` / `og:image` / JSON-LD `url` `image` / `sitemap.xml` / `robots.txt` 的 `Sitemap`）都写自定义域名的 **punycode** 形式 `xn--uesr8qr0rdwk.cn` —— ASCII 无歧义，不依赖抓取器是否做 IDN 规范化。指向会 301 的地址是自相矛盾的：`canonical` 的定义就是「最终地址」，而部分社交抓取器不跟随重定向、`og:image` 会直接不出图。
+
+面向人的位置（README 的「在线使用」、分享卡片上印的那行字）用中文域名原文。
 
 ## 站点资产
 

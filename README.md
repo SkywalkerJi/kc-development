@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](./LICENSE)
 [![Deploy](https://github.com/SkywalkerJi/kc-development-tools/actions/workflows/deploy.yml/badge.svg)](https://github.com/SkywalkerJi/kc-development-tools/actions/workflows/deploy.yml)
 
-### [▶ 在线使用](https://skywalkerji.github.io/kc-development-tools/)
+### [▶ 在线使用](https://御坂美琴.cn/kc-development-tools/)
 
 简体中文 　·　 繁體中文 　·　 日本語 　·　 English
 

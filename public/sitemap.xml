@@ -10,9 +10,14 @@
 
   用法见 robots.txt 里的说明：项目页下的 robots.txt 读不到，这份地图要在
   Google Search Console 里对该子目录属性手动提交才有意义。
+
+  地址用的是自定义域名 御坂美琴.cn 的 punycode 形式，与 index.html 的
+  canonical 保持一致——skywalkerji.github.io 那个地址会 301 跳到它，站点
+  地图里列一个会重定向的 URL 属于自相矛盾。详见 index.html 里 canonical
+  上方那段注释。
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://skywalkerji.github.io/kc-development-tools/</loc>
+    <loc>https://xn--uesr8qr0rdwk.cn/kc-development-tools/</loc>
   </url>
 </urlset>

@@ -1,17 +1,23 @@
 # 允许全站抓取，并指出站点地图。
 #
-# ⚠️ 效力有限，别高估它：本站部署在 GitHub Pages 的**项目页**上
-# （https://skywalkerji.github.io/kc-development-tools/），而爬虫只读
-# **域名根**下的 https://skywalkerji.github.io/robots.txt —— 那个位置属于
-# 用户根仓库 skywalkerji.github.io，不是本仓库，这个文件放在子路径下爬虫
-# 不会去取。保留它的理由只有两条：一是各类 SEO 体检工具会去抓
-# <站点根>/robots.txt 并把 404 记成一条问题，二是万一将来换成自定义域名
-# （那时本仓库的产物就在域名根下了），这个文件立刻生效、不用再想起来补。
+# ⚠️ 效力有限，别高估它：本站是 GitHub Pages 的**项目页**，最终地址是
+# https://御坂美琴.cn/kc-development-tools/（自定义域名配置在用户根仓库
+# skywalkerji.github.io 上）。爬虫只读**域名根**下的
+# https://御坂美琴.cn/robots.txt —— 那个位置由用户根仓库提供，不是本仓库，
+# 放在子路径下的这一份爬虫不会去取（实测域名根当前是 404，也就是说那份
+# robots.txt 还不存在）。
+#
+# 保留它的理由只有两条：一是各类 SEO 体检工具会去抓 <站点根>/robots.txt
+# 并把 404 记成一条问题，二是万一将来本仓库自己接管某个域名的根路径，
+# 这个文件立刻生效、不用再想起来补。
 #
 # 同理，下面这行 Sitemap 指令实际上也不会被读到；sitemap.xml 真正的用法是
 # 在 Google Search Console 里对这个子目录属性手动提交。
+#
+# 真要让 robots 生效，正确做法是在 skywalkerji.github.io 那个仓库的根目录
+# 放一份 robots.txt —— 那超出本仓库的范围。
 
 User-agent: *
 Allow: /
 
-Sitemap: https://skywalkerji.github.io/kc-development-tools/sitemap.xml
+Sitemap: https://xn--uesr8qr0rdwk.cn/kc-development-tools/sitemap.xml
