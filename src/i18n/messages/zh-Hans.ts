@@ -7,6 +7,7 @@
  * 真要改措辞，先确认没有测试依赖它，并在提交信息里写明。
  */
 export const zhHans = {
+  'title.app': '装备开发',
   'title.development': '装备开发',
   'error.initFailed': '装备开发数据加载失败，请刷新页面重试。',
 

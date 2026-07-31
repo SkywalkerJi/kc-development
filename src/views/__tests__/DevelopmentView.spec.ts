@@ -730,8 +730,16 @@ describe('DevelopmentView — i18n 接线（Task 7）', () => {
     // 实时切换语言（不重新挂载、不重新点按钮）——这才是 RESULT_COLUMNS 必须
     // 是 computed 而不是常量数组的理由本身：上面两个断言只证明了"用哪个
     // locale 挂载就渲染成哪个 locale"，证不了"挂载之后再切换，界面会不会
-    // 跟着动"。若 RESULT_COLUMNS 退化回普通常量数组，下面的表头与「秘书舰」
-    // 列会停留在 en，不会跟着这次切换变回中文。
+    // 跟着动"。若 RESULT_COLUMNS 退化回普通常量数组，下面的表头断言会先
+    // 变红：label 是数组创建那一刻 `t('label.secretary')` 求值出的字符串，
+    // 冻在数组里，不会随后续切换重算。
+    //
+    // 「秘书舰」列的**内容**断言则不会——`display: (r) => poolName(r.池名)`
+    // 本身是个闭包，不管 RESULT_COLUMNS 是不是 computed，它都在每次渲染时
+    // 被模板重新调用一遍，调用时读到的是当下的 localeRef，跟这个闭包是何时
+    // 创建的无关。所以这条内容断言测的是另一件事——poolName() 本身的响应
+    // 性——而不是 RESULT_COLUMNS 该不该是 computed；下面留着它只是顺带
+    // 覆盖，不要指望它能在 RESULT_COLUMNS 退化时报警。
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       // zh-Hans 不请求 ctype.json（简体舰级名走 developmentStore.ctypeMap，
       // 见 i18n/names/load.ts 的 wantCtype 判断），所以这里只需要两个文件。

@@ -4,7 +4,7 @@ import { MESSAGES } from './messages'
 import { detectLocale, isLocale } from './detect'
 import { loadNameTables } from './names/load'
 import { POOL_NAMES } from './names/poolNames'
-import { STYPE_NAMES } from './names/stypeNames'
+import { STYPE_NAMES, JA_STYPE_OVERRIDES } from './names/stypeNames'
 import { useStart2Store } from '@/stores/start2Store'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { ShipType } from '@/core/types'
@@ -86,7 +86,15 @@ export function ctypeName(id: number): string {
   return tables.value.ctype[id] ?? ''
 }
 
-/** 开发池名。入参是中文原名（身份键）。 */
+/**
+ * 开发池名。入参是中文原名（身份键）。
+ *
+ * 未命中（POOL_NAMES 里没有这个键）时回退的是**入参本身**（zh-Hans 原名），
+ * 不是上面那条"回退日文原名"的通用规则——这里刻意不同：POOL_NAMES 是
+ * 46 条封闭集合，由 poolNames.spec.ts 钉住"键与 zh-Hans 一列恒等、四语言
+ * 全部命中"，未命中在正常运行下不会发生，回退值选什么都不影响真实用户，
+ * 选身份键本身只是让这种理论上不该发生的情况仍然显示点有意义的文字。
+ */
 export function poolName(zhHansName: string): string {
   return POOL_NAMES[zhHansName]?.[localeRef.value] ?? zhHansName
 }
@@ -94,10 +102,24 @@ export function poolName(zhHansName: string): string {
 /**
  * 舰种名。入参是 DevelopmentPool.json 里的代码（'DD'/'CL'…）。
  * ja 不查手写表，从 api_mst_stype 取：ShipType 枚举的序数就是游戏的 stype 值，
- * 拿它去 api_mst_stype 里找同 id 的记录，api_name 即日文舰种名。
+ * 拿它去 api_mst_stype 里找同 id 的记录，api_name 即日文舰种名——但先查
+ * JA_STYPE_OVERRIDES：FBB 是唯一的例外，游戏数据本身把 stype 8（FBB）和
+ * 9（BB）都记成「戦艦」，直接派生会让 ja 是四语言里唯一分不清两者的一个
+ * （详见 names/stypeNames.ts 里 JA_STYPE_OVERRIDES 的注释）。这条覆盖必须
+ * 在 api_mst_stype 查找**之前**做：FBB 在数据里本来就查得到「戦艦」，放在
+ * 查找之后覆盖永远不会被走到。
+ *
+ * 未命中（代码不在 STYPE_NAMES/ja 分支两处都查不到，或 ja 分支下
+ * api_mst_stype 还没加载）时回退的同样是**入参本身**（原始代码，如
+ * 'DD'），不是"回退日文原名"那条通用规则——STYPE_NAMES 是 20 个代码的
+ * 封闭集合，由 DevelopmentPool.json 里出现的舰种代码钉死，未命中在正常
+ * 运行下同样不该发生，回退成原始代码只是让这种情况仍然可读、可定位到是
+ * 哪个代码出了问题，而不是显示空白。
  */
 export function stypeName(code: string): string {
   if (localeRef.value === 'ja') {
+    const override = JA_STYPE_OVERRIDES[code]
+    if (override) return override
     const stype = ShipType[code as keyof typeof ShipType]
     if (typeof stype === 'number') {
       const hit = useStart2Store().api_mst_stype.find((s) => s.api_id === stype)
@@ -110,19 +132,32 @@ export function stypeName(code: string): string {
 
 /**
  * 实际执行一次切换：加载、原子发布（`tables` 必须先于 `localeRef` 写，见
- * `setLocale` 顶部注释）、写 `<html lang>`、写 localStorage。从 `setLocale`
- * 拆出来是因为并发控制（见上面 `inflight` 的注释）需要在"要不要发起一次新
- * 加载"和"加载本身"之间插一层：`setLocale` 只负责判断前者，判断完之后就把
- * 剩下的活全部委托给这个函数，自己不重复实现一遍。
+ * `setLocale` 顶部注释）、写 `<html lang>`、写 `document.title`、按需写
+ * localStorage。从 `setLocale` 拆出来是因为并发控制（见上面 `inflight` 的
+ * 注释）需要在"要不要发起一次新加载"和"加载本身"之间插一层：`setLocale`
+ * 只负责判断前者，判断完之后就把剩下的活全部委托给这个函数，自己不重复
+ * 实现一遍。
+ *
+ * `document.title` 跟 `<html lang>` 写在同一处、同一时机：两者都是"语言
+ * 变了就要跟着变"的**文档级**副作用，没有模板负责渲染它们，与其为一行赋值
+ * 单起一个 watch(currentLocale) 增加一条响应式依赖链，不如直接放在这个已经
+ * 是"语言切换成功"这个事件的唯一出口里——`localeRef.value = next` 已经在
+ * 上一行执行，`t()` 读到的就是切换后的语言。
+ *
+ * `persist` 控制要不要写 localStorage：见 `setLocale` 与 `initLocale` 对它
+ * 的说明——冷启动的探测结果不写，只有用户真正做出的选择才写。
  */
-async function doSwitch(next: Locale): Promise<boolean> {
+async function doSwitch(next: Locale, persist: boolean): Promise<boolean> {
   try {
     const loadedTables = await loadNameTables(next)
     tables.value = loadedTables
     localeRef.value = next
     loaded.value = true
     document.documentElement.lang = next
-    try { localStorage.setItem(STORAGE_KEY, next) } catch { /* 隐私模式下 setItem 会抛，不该因此切换失败 */ }
+    document.title = t('title.app')
+    if (persist) {
+      try { localStorage.setItem(STORAGE_KEY, next) } catch { /* 隐私模式下 setItem 会抛，不该因此切换失败 */ }
+    }
     return true
   } catch (e) {
     console.error('切换语言失败，保持当前语言:', e)
@@ -145,13 +180,18 @@ async function doSwitch(next: Locale): Promise<boolean> {
  *    空操作。只看"语言相同"不看"表加载过没有"，会漏掉冷启动这一刻——
  *    `localeRef` 的初值本来就是 zh-Hans，但那一刻从未真正加载过任何表
  *    （见上面 `loaded` 的注释）。
+ *
+ * `persist` 默认 true：调用方绝大多数是用户在 LocaleSwitcher 里做出的真实
+ * 选择，理应记住。唯一传 false 的调用方是 `initLocale`——见它的注释：
+ * 冷启动时"探测/沿用上次选择"不等于"用户现在选择了这个语言"，不该把探测
+ * 结果重新写回 localStorage。
  */
-export async function setLocale(next: Locale): Promise<boolean> {
+export async function setLocale(next: Locale, persist = true): Promise<boolean> {
   if (inflight) return inflight.target === next ? inflight.promise : false
   if (next === localeRef.value && loaded.value) return true
 
   pending.value = true
-  const promise = doSwitch(next).finally(() => {
+  const promise = doSwitch(next, persist).finally(() => {
     inflight = null
     pending.value = false
   })
@@ -159,7 +199,23 @@ export async function setLocale(next: Locale): Promise<boolean> {
   return promise
 }
 
-/** 应用启动时调用一次：localStorage 优先，否则按浏览器语言探测。 */
+/**
+ * 应用启动时调用一次：localStorage 优先，否则按浏览器语言探测。
+ *
+ * 这里调用 `setLocale` 时传 `persist: false`——不管 `want` 是读到的存量
+ * localStorage 值还是探测出来的新值，这次调用都不是"用户刚刚做出的选择"，
+ * 不该触发写入：
+ * - `want` 来自 localStorage：值本来就在那，重写一遍是空操作，但没有理由
+ *   让"启动时读一次配置"这件事看起来像"这次写了一次配置"。
+ * - `want` 来自探测：这才是真正要避免的情况——反过来看，若这里保持
+ *   `persist: true`（旧行为），一个从未手动选过语言、浏览器语言是
+ *   `ja` 的首次访问用户，会在什么都没点的情况下把 `kc-development.locale
+ *   = ja` 写进 localStorage；此后即便他把浏览器语言改回别的语言，
+ *   `initLocale` 读到的 localStorage 优先于探测，应用会一直卡在 `ja`，
+ *   探测结果从此再也不会生效。localStorage 应该记的是"用户选过什么"，
+ *   不是"上次探测到什么"——见设计稿 §6 开头那句"用户可在运行时切换并被
+ *   记住"，记的主语是"切换"，不是"探测"。
+ */
 export async function initLocale(): Promise<void> {
   let stored: string | null = null
   try { stored = localStorage.getItem(STORAGE_KEY) } catch { /* 同上 */ }
@@ -177,7 +233,8 @@ export async function initLocale(): Promise<void> {
   // 的 zh-Hans，也必须真正跑一次 setLocale 才能把名称表加载进来——"locale
   // 没变"不能当"已经加载过"的证据。该不该真的发请求由 setLocale 内部的
   // loaded 短路处理，这里无条件调用即可，不用再判断一次 want !== localeRef。
-  await setLocale(want)
+  // persist: false —— 见本函数顶部的说明，冷启动不写 localStorage。
+  await setLocale(want, false)
 }
 
 /** 仅供测试重置模块级状态。生产代码不要调用。 */

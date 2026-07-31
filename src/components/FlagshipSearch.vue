@@ -35,7 +35,7 @@ import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { t as $t, shipName, poolName } from '@/i18n'
 
 const props = defineProps<{ matched: boolean }>()
-const emit = defineEmits<{ select: [payload: { pool: DevelopmentPoolClass; shipName: string }] }>()
+const emit = defineEmits<{ select: [payload: { pool: DevelopmentPoolClass }] }>()
 
 const developmentStore = useDevelopmentStore()
 const start2Store = useStart2Store()
@@ -89,7 +89,12 @@ function choose(shipId: number) {
   resolved.value = { poolName: hit.pool.开发池名称 }
   // 程序化赋值不触发 @input，所以这里不会把刚设好的 resolved 清掉
   keyword.value = shipName(shipId)
-  emit('select', { pool: hit.pool, shipName: start2Store.shipList[shipId].name })
+  // payload 曾经还带一个 shipName 字段（start2Store.shipList[shipId].name，
+  // 未翻译的日文原名）：唯一消费者 DevelopmentView.onFlagshipSelect 从不读
+  // 它，而且这个名字与本文件顶部 `import { ... shipName } from '@/i18n'`
+  // 的函数同名，在这个作用域里读起来像是那个函数的返回值——两个理由都
+  // 够删掉它了，不需要事件带出不被消费的数据。
+  emit('select', { pool: hit.pool })
 }
 </script>
 

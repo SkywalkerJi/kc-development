@@ -14,7 +14,11 @@
     <meta charset="UTF-8">
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vite App</title>
+    <!-- 与上面 <html lang="zh-Hans"> 同一个理由：首帧在 i18n 的 doSwitch() 把
+         document.title 改写成 t('title.app') 之前就已经渲染，这里给的必须是
+         zh-Hans 的值（src/i18n/messages/zh-Hans.ts 的 title.app），否则首帧
+         标签页标题会先闪一下这里的占位文字。 -->
+    <title>装备开发</title>
   </head>
   <body>
     <div id="app"></div>

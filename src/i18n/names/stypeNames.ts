@@ -3,10 +3,32 @@ import type { Locale } from '../types'
 /**
  * 舰种代码的译名。**只有三列**：ja 不在这里，它从
  * `api_mst_stype[].api_name` 取（见 i18n/index.ts 的 stypeName）——
- * 数据里本来就有日文舰种名，手抄 20 个词只会引入错字。
+ * 数据里本来就有日文舰种名，手抄 20 个词只会引入错字。ja 唯一的例外是
+ * 下面的 JA_STYPE_OVERRIDES，理由见那条注释。
  *
  * 英文保留缩写本身：英文圈本来就用 DD/CL 这套缩写指代舰种。
  */
+
+/**
+ * ja 的单条例外：FBB（高速戦艦）。
+ *
+ * 游戏自己的 api_mst_stype 表把 api_id 8（FBB）和 9（BB）都记成「戦艦」——
+ * start2.json 实测如此，两条记录的 api_name 逐字相同。stypeName 的 ja 分支
+ * 若像其余 19 个代码一样直接从这张表取，「炮战系-其它」（舰种
+ * `["BB","FBB","CA","AR"]`）就会渲染出「戦艦,戦艦,重巡洋艦,工作艦」这种
+ * 字面重复——其余三个语言都靠手写表区分二者（战舰/高速战舰、戰艦/高速戰艦、
+ * BB/FBB），只有依赖数据派生的 ja 会因为游戏数据本身的粒度丢失这个区分。
+ *
+ * 所以这里为 ja 单开一条覆盖，只覆盖 FBB 这一个代码，其余 19 个仍然走
+ * api_mst_stype 派生（见 i18n/index.ts 的 stypeName）——不要因为加了这一条
+ * 就把整张 ja 表手抄一遍，那会重新引入"数据里有、抄错字"的风险，这条覆盖
+ * 存在的唯一理由是数据本身不区分 8/9，其余 19 个没有这个问题。
+ * 删除前请先确认 api_mst_stype 真的开始区分 8/9（上游游戏数据变了）。
+ */
+export const JA_STYPE_OVERRIDES: Partial<Record<string, string>> = {
+  FBB: '高速戦艦',
+}
+
 export const STYPE_NAMES: Record<string, Record<Exclude<Locale, 'ja'>, string>> = {
   DE: { 'zh-Hans': '海防舰', 'zh-Hant': '海防艦', en: 'DE' },
   DD: { 'zh-Hans': '驱逐舰', 'zh-Hant': '驅逐艦', en: 'DD' },

@@ -30,7 +30,18 @@ export interface PoolDescriptor {
   stypes: string[]
   /** 数字 ctype ID，或非数字 舰型 的原始字符串 */
   ctypes: (number | string)[]
-  /** 日文舰名，身份键原样保留 */
+  /**
+   * 日文舰名，身份键原样保留——这一条只说明了为什么值不能被*改写*。
+   * 更该问的问题是为什么它在展示层也**不翻译**（4 语言里全部原样渲染日文）：
+   * 把它译出来需要反查 舰名 → 舰ID，而这个反查只有 init() 里的模糊匹配
+   * `getIDs(names, false)`（developmentPool.ts:100）能做，把它挪到展示层
+   * 意味着每次渲染都要重新模糊匹配一遍身份键，且任何翻译结果都会改变
+   * zh-Hans 的渲染文本，违反 zh-Hans 逐字不变的约束（DOM 断言依赖它）。
+   * 所以这条只在 A/B 两层名称表都够不着的地方保留原文，是权衡后的结果，
+   * 不是遗漏。45 个可选开发池里有 21 个的筛选条件带 舰名，是这份数据里
+   * 最大的一块未翻译展示面——base.css 里 en 字体栈必须兜住日文字体
+   * 正是因为它（见该文件 :lang(en) 块的注释）。
+   */
   shipNames: string[]
   excludeShipIds: number[]
   /**

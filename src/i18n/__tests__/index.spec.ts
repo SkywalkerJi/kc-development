@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useStart2Store } from '@/stores/start2Store'
 import { useDevelopmentStore } from '@/stores/developmentStore'
-import { t, equipName, shipName, ctypeName, setLocale, initLocale, currentLocale, __resetI18nForTest } from '@/i18n'
+import {
+  t, equipName, shipName, ctypeName, stypeName, setLocale, initLocale, currentLocale,
+  __resetI18nForTest,
+} from '@/i18n'
 
 function mockFetchOk(tables: Record<string, unknown>) {
   return vi.fn(async (url: string) => {
@@ -184,5 +187,109 @@ describe('i18n 门面', () => {
     // en 一轮请求是 items + ships + ctype 三个文件；若并发触发了第二轮，
     // 这里会看到 6 次调用而不是 3 次。
     expect(calls.length).toBe(3)
+  })
+
+  // Fix 3：stypeName 此前只在 DevelopmentView.spec.ts 里被间接测过 zh-Hans
+  // 分支，ja 分支（连同 Fix 2 新加的 FBB 覆盖）与回退到原始代码的路径完全
+  // 没有覆盖。这里补齐四条路径。
+  describe('stypeName', () => {
+    it('zh-Hans 走 STYPE_NAMES 表', () => {
+      expect(stypeName('DD')).toBe('驱逐舰')
+    })
+
+    it('en 走 STYPE_NAMES 表，保留缩写本身', async () => {
+      vi.stubGlobal('fetch', mockFetchOk({
+        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      }))
+      await setLocale('en')
+      expect(stypeName('DD')).toBe('DD')
+    })
+
+    it('非 ja 未命中回退代码本身（STYPE_NAMES 是封闭集合，没有第二条回退路径）', () => {
+      expect(stypeName('ZZ')).toBe('ZZ')
+    })
+
+    describe('ja：从 api_mst_stype 派生（含 Fix 2 的 FBB 覆盖）', () => {
+      async function toJa() {
+        vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': {} }))
+        await setLocale('ja')
+      }
+
+      it('正常代码：查 ShipType 拿 stype 序数，再查 api_mst_stype 拿日文名', async () => {
+        const s = useStart2Store()
+        s.api_mst_stype = [{ api_id: 2, api_name: '駆逐艦' }] as never
+        await toJa()
+        expect(stypeName('DD')).toBe('駆逐艦')
+      })
+
+      // 这条是 Fix 2 本身的回归测试：若把覆盖删掉、或者不小心放到了
+      // api_mst_stype.find 之后，FBB 会跟 BB 一样查到「戦艦」，两个断言的
+      // 后半句就会失败。
+      it('FBB 与 BB 在 api_mst_stype 里都是「戦艦」，但 stypeName 不应该撞车', async () => {
+        const s = useStart2Store()
+        s.api_mst_stype = [
+          { api_id: 8, api_name: '戦艦' },
+          { api_id: 9, api_name: '戦艦' },
+        ] as never
+        await toJa()
+        expect(stypeName('FBB')).toBe('高速戦艦')
+        expect(stypeName('BB')).toBe('戦艦')
+      })
+
+      // api_mst_stype 为空时 FBB 依然拿到覆盖值——证明覆盖判断发生在
+      // api_mst_stype.find 之前、不依赖那次查找的结果。若覆盖被挪到了
+      // find 之后当"兜底"，这条会失败（能命中覆盖的代码走不到这里）。
+      it('FBB 覆盖不依赖 api_mst_stype 里有没有数据', async () => {
+        const s = useStart2Store()
+        s.api_mst_stype = [] as never
+        await toJa()
+        expect(stypeName('FBB')).toBe('高速戦艦')
+      })
+
+      it('ShipType 里没有的代码回退代码本身', async () => {
+        await toJa()
+        expect(stypeName('ZZ')).toBe('ZZ')
+      })
+
+      it('ShipType 里有、但 api_mst_stype 查不到对应记录时回退代码本身', async () => {
+        const s = useStart2Store()
+        s.api_mst_stype = [] as never
+        await toJa()
+        expect(stypeName('DD')).toBe('DD')
+      })
+    })
+  })
+
+  // Fix 7：localStorage 只应该记录用户真正做出的选择，不该缓存启动时的
+  // 探测结果——见 i18n/index.ts 里 setLocale/initLocale 的 persist 参数。
+  describe('localStorage 持久化：只在显式切换时写，探测驱动的切换不写', () => {
+    it('显式 setLocale 会写 localStorage', async () => {
+      vi.stubGlobal('fetch', mockFetchOk({
+        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      }))
+      await setLocale('en')
+      expect(localStorage.getItem('kc-development.locale')).toBe('en')
+    })
+
+    it('initLocale 靠探测选中语言时不写 localStorage', async () => {
+      // 探测到 ja（而不是默认的 zh-Hans），确保这次切换确实执行了、
+      // 不是被"locale 没变"的短路跳过——那样的话"没写"就什么也证明不了。
+      vi.stubGlobal('navigator', { languages: ['ja'], language: 'ja' })
+      vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': {} }))
+      await initLocale()
+      expect(currentLocale.value).toBe('ja')
+      expect(localStorage.getItem('kc-development.locale')).toBeNull()
+    })
+  })
+
+  // Fix 10：index.html 的静态 <title> 只覆盖首帧；语言切换后标签页标题也要
+  // 跟着变，否则 en/ja/zh-Hant 用户会一直看到 zh-Hans 的标题。
+  it('切换语言后 document.title 跟着变成对应语言的 title.app', async () => {
+    vi.stubGlobal('fetch', mockFetchOk({
+      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+    }))
+    await setLocale('en')
+    expect(document.title).toBe(t('title.app'))
+    expect(document.title).toBe('Equipment Development')
   })
 })

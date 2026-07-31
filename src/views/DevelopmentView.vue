@@ -405,7 +405,7 @@ const flagshipMatched = computed(
   () => !flagshipPoolName.value || flagshipPoolName.value === selectedPool.value?.开发池名称,
 )
 
-function onFlagshipSelect(payload: { pool: DevelopmentPoolClass; shipName: string }) {
+function onFlagshipSelect(payload: { pool: DevelopmentPoolClass }) {
   flagshipPoolName.value = payload.pool.开发池名称
   const target = developmentStore.developmentPools.find(
     (p) => p.开发池名称 === payload.pool.开发池名称 && p.开发池ID >= 0 && !p.最低资源,

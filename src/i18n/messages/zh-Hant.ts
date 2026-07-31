@@ -1,6 +1,7 @@
 import type { MsgKey } from '../types'
 
 export const zhHant: Record<MsgKey, string> = {
+  'title.app': '裝備開發',
   'title.development': '裝備開發',
   'error.initFailed': '裝備開發資料載入失敗，請重新整理頁面。',
 

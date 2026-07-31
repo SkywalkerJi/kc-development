@@ -1,6 +1,7 @@
 import type { MsgKey } from '../types'
 
 export const en: Record<MsgKey, string> = {
+  'title.app': 'Equipment Development',
   'title.development': 'Equipment Development',
   'error.initFailed': 'Failed to load development data. Please reload the page.',
 

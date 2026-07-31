@@ -55,16 +55,33 @@
  * - --form-label-width 是从「秘书舰类型：」6 个全角字符推出来的 6.5em。
  *   英文的 "Secretary Ship Type:" 会撑爆它，下拉框与搜索框左边缘随之错开。
  *
- * ⚠️ :lang(en) 的字体栈末尾额外挂了一段日文 CJK 族，这不是笔误：装备名/
- * 舰名查不到译名时回退的是**日文原名**而不是英文占位符（src/i18n/index.ts
- * 的 equipName/shipName），Task 2 记录过 KC3 的装备表本身就缺 4 条译名、
- * 这是结构性常态不是一次性的边界情况；ctype 表更进一步——sync-i18n 生成
- * en 表时，查不到译名的条目**按设计**直接回填日文原文（同文件 ctypeName
- * 的注释）。也就是说 en 界面渲染日文汉字是设计内的必然，不是异常路径。
+ * ⚠️ :lang(en) 的字体栈末尾额外挂了一段日文 CJK 族，这不是笔误。
+ *
+ * 真正的理由：PoolDescriptor.shipNames（src/core/poolDescriptor.ts:34-35，
+ * 原样拼进展示串，见同文件 :76）在**任何语言下都是日文舰名**——它是身份键，
+ * 不经过 equipName/shipName 那条"查不到就回退日文原名"的路径，是压根不翻译
+ * （原因见 poolDescriptor.ts 里 shipNames 字段自己的注释）。45 个可在下拉框
+ * 选中的开发池（开发池ID≥0 且无最低资源门槛，按名去重——DevelopmentPool.json
+ * 里共 46 个开发池名，唯一选不到的「空母系-陆攻」靠负 ID + 资源门槛常驻生效，
+ * 不出现在下拉框）里，有 11 个的筛选条件带着 CJK 汉字舰名：「水雷系-川内改二」
+ * 在 en 下渲染成 `Torpedo - Sendai Kai Ni(川内改二)`，「炮战系-比叡改二」
+ * 「水雷系-神通改二」「水雷系-天津风」等另外 7 个同理。少了日文字体族，
+ * 这 11 个选项在没装日文字体的系统上会直接变成方块（tofu）。
+ *
+ * 次要、且目前用不上的理由：ctype 表在 sync-i18n 生成 en 表时，查不到译名
+ * 的条目按设计直接回填日文原文（同文件 ctypeName 的注释；实测 en/ctype.json
+ * 141 条里有 18 条与 ja/ctype.json 逐字相同）。这条路径结构上存在，但
+ * DevelopmentPool.json 实际引用的 12 个 ctype ID 没有一个落在这 18 条回填
+ * 里——今天的池数据走不到它，只有将来新增引用这些条目的池才会触发。
+ *
+ * （这里曾经写过"KC3 的装备表本身缺 4 条译名"，那是错的：缺的是 zh-Hans 的
+ * items.json——id 254–257，F6F-3N/F6F-5N/TBF/TBM-3D，且都是拉丁名，与 en
+ * 栈无关；en/items.json 对 start2 的 703 条装备是全译的，见
+ * public/data/i18n/_meta.json 的 counts.en.items。）
+ *
  * 沿用上面 --app-font-sans 那条注释的教训：西文字体栈本身不含汉字，句尾
- * 的 sans-serif 通用族不会顺着单字符回落，缺了日文字体的系统上这些日文
- * 原名会直接变成方块（tofu）。因此 en 栈必须显式带上日文字体族兜底——
- * 千万不要因为「这是英文栈」把它当冗余删掉。
+ * 的 sans-serif 通用族不会顺着单字符回落。因此 en 栈必须显式带上日文字体
+ * 族兜底——千万不要因为「这是英文栈」把它当冗余删掉。
  *
  * ⚠️ 下面三个宽度值是按「最长标签字符数 + 0.5em 余量」估的初值。
  * 现有注释里那句「实测 input.x - label.right === 0」说明这个项目对这类值
@@ -90,7 +107,8 @@
 :root:lang(en) {
   --form-label-width: 11em;   /* "Secretary Ship Type:" 20 个拉丁字符，均宽约 0.5em */
   /* 日文尾巴（Hiragino Sans / Yu Gothic / Noto Sans CJK JP）不是抄错块——
-     见上面那条 ⚠️ 注释：en 下渲染的日文回退原名需要这些字体兜底。 */
+     见上面那条 ⚠️ 注释：PoolDescriptor.shipNames 在 en 下也是日文舰名，
+     11/45 个下拉池的筛选条件里带着它，需要这些字体兜底。 */
   --app-font-sans:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,

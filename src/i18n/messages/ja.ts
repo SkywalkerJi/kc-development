@@ -1,6 +1,7 @@
 import type { MsgKey } from '../types'
 
 export const ja: Record<MsgKey, string> = {
+  'title.app': '装備開発',
   'title.development': '装備開発',
   'error.initFailed': '装備開発データの読み込みに失敗しました。ページを再読み込みしてください。',
 
