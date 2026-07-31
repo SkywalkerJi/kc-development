@@ -16,7 +16,18 @@ describe('detectLocale', () => {
     // 回归：主语言子标签解析要先做，不能用 startsWith 前缀匹配整条标签。
     // 'jam'（Jamaican Creole）、'zha'（壮语）都是真实的 ISO 639-3 三字母
     // 代码，恰好以 'ja'/'zh' 开头——旧写法会把它们分别误判成日文/简体中文。
+    // 'zha' 经 Intl.Locale 规范化后会变成它的首选代码 'za'（ISO 639-3 的
+    // 弃用别名规范化到首选值，Intl.Locale 内置这张表），language 依然既不是
+    // 'zh' 也不是 'ja'，落到「其他」分支，判定结果不变。
     [['jam'], 'en'], [['zha'], 'en'],
+    // 回归（本轮 Fix 5）：上一版正则里的 `.*` 不挑字符，这三个语法本不合法
+    // 的标签都曾被当成"合法"处理——'en-US-' 结尾多一个尾随连字符、
+    // 'en-a@' 子标签里混进 BCP 47 不允许的 '@'、'zh-Hant!' 结尾混进 '!'
+    // （且因为 `startsWith('zh-hant')` 命中被误判成繁体）。改用
+    // Intl.Locale 后三者构造时都抛 RangeError，被当成"识别不出"跳过，
+    // 单独一条时经过 zh-Hans 这个兜底不足以证明"被跳过"而不是"被判对了"，
+    // 靠下面 truncation 那条用例（后面还有一个合法标签）来证明。
+    [['en-US-'], 'zh-Hans'], [['en-a@'], 'zh-Hans'], [['zh-Hant!'], 'zh-Hans'],
   ])('%j → %s', (tags, expected) => {
     expect(detectLocale(tags)).toBe(expected)
   })
@@ -25,11 +36,19 @@ describe('detectLocale', () => {
     expect(detectLocale(['en-', 'ja-JP'])).toBe('ja')
   })
 
+  it.each([
+    ['en-US-', 'ja-JP'], ['en-a@', 'ja-JP'], ['zh-Hant!', 'ja-JP'],
+  ])('语法不合法的标签（%s）不会截断扫描——继续找到后面合法的 %s', (bad, good) => {
+    expect(detectLocale([bad, good])).toBe('ja')
+  })
+
   it('取第一个能识别的标签，而不是第一个标签', () => {
-    // 'x-testing' 是 BCP 47 的 private-use 单例子标签，主语言部分只有一个
-    // 字母 'x'，不满足「2-3 个字母」的形状，识别不出，验证「继续往后找」。
-    // （不能再用旧版这里的 'xx-YY'：Fix A 之后 'xx' 满足形状要求，会被当成
-    // 「识别到了」直接归英文，不再具备「继续往后找」的演示效果。）
+    // 'x-testing' 是 BCP 47 的 private-use 单例子标签（单个字母 'x' 打头，
+    // 不是一个语言子标签），Intl.Locale 构造时对它抛 RangeError，识别不出，
+    // 验证「继续往后找」。
+    // （不能用 'xx-YY'：'xx' 是形状合法的语言子标签，Intl.Locale 能正常
+    // 解析出 language: 'xx'，会被当成「识别到了」直接归英文，不再具备
+    // 「继续往后找」的演示效果。）
     expect(detectLocale(['x-testing', 'ja-JP'])).toBe('ja')
   })
 

@@ -15,34 +15,44 @@ import { LOCALES, type Locale } from './types'
  * 裸 `zh` 归简体是有意的默认：不带地区的 `zh` 在现实中绝大多数来自简体环境。
  * 逐个标签往后找而不是只看第一个 —— 用户把英文排在母语前面是常见配置。
  */
-// 先解析出 BCP 47 主语言子标签（2-3 个 ASCII 字母，后面必须紧跟结束，或
-// 紧跟 '-' + 至少一个字母/数字开头的后续内容——单独一个尾随连字符，如
-// 'en-'，不构成"后面还有子标签"，不能算合法），再基于这个解析结果分支，
-// 不能反过来对整条标签做 `startsWith` 前缀匹配：'ja'/'zh' 只是很多合法
-// 三字母语言码的前缀而已——'jam'（Jamaican Creole）会被 `startsWith('ja')`
-// 命中误判成日文，'zha'（壮语）会被 `startsWith('zh')` 命中误判成简体中文，
-// 两者都是真实存在的 ISO 639-3 代码，不是构造出来的边界情况。
+// 上一版（Fix A）用一条自写的正则 `/^([a-z]{2,3})(?:-[a-z0-9].*)?$/` 解析
+// 主语言子标签，再对解析结果分支——方向是对的（不再对整条标签做
+// `startsWith` 前缀匹配），但正则本身的 `(?:-[a-z0-9].*)?` 这条"后续内容"
+// 分支里那个 `.*` 不挑字符：只要求后续以一个字母/数字开头，开头之后随便
+// 塞什么都能整条匹配到底——'en-US-'（结尾多一个尾随连字符）、'en-a@'
+// （子标签里混进 BCP 47 不允许的 `@`）、'zh-Hant!'（结尾混进 `!`）都能让
+// `.exec()` 成功且消费掉整条字符串，被当成"语法合法"处理，其中最后一个
+// 还会让 `tag.startsWith('zh-hant')` 命中，把一个语法都不对的标签判成繁体。
+// 手写正则要正确覆盖 BCP 47 的完整产生式（分隔子标签的字符类、每个子标签
+// 的长度上限、单例子标签、私有子标签……）成本很高、还容易漏——这正是上面
+// 挑的坑：只学了"先解析主语言子标签"这个方向，没有学到"正则本身必须精确
+// 覆盖语法，`.*` 会悄悄吞掉本该判为非法的尾巴"。
 //
-// 只做语法校验，不做语义（真实语言注册表）校验：不检查解析出的主语言子
-// 标签是否在某张语言名单里。语法合法但查无此语言（如 'xx'、'qqq' 这类
-// 不存在的代码）会被判成「识别到了」归入英文，而不是继续找下一个标签——
-// 这是有意的：本函数的职责是「像不像一个语言标签」，不是对着 ISO 639 表
-// 逐条核实，后者需要联网或打包一份语言注册表，成本与收益不成比例；对着
-// 不存在的语言码归成英文，后果远比把 ar-SA/hi-IN 这类真实语言误判成简体
-// 中文轻。
-const PRIMARY_SUBTAG = /^([a-z]{2,3})(?:-[a-z0-9].*)?$/
-
+// 这一版改用运行时自带的 `Intl.Locale`（ES2020 起标准内置，`tsconfig.app.json`
+// 的 `lib: ["ES2020", ...]` 自动带上 `es2020.intl`，不需要额外引入类型包）
+// 做语法校验：它是 BCP 47 的权威实现，比任何自写正则更准——构造函数对语法
+// 不合法的输入（包括上面三个反例）一律抛 `RangeError`，不会把它们悄悄放过。
+// 用它解析出的 `language`/`script`/`region` 三个字段分支，不再对标签字符串
+// 本身做任何前缀匹配或子串判断，也就不再需要手写正则来兜住 BCP 47 的语法。
+//
+// 仍然只做语法校验，不做语义（真实语言注册表）校验：`Intl.Locale` 本身也
+// 不核实 'xx'、'qqq' 这类语法合法但查无此语言的代码是否真的存在于 ISO 639——
+// 它们会被正常解析、`language` 得到 'xx'/'qqq'，落进下面"其他任何可识别
+// 标签 → 英文"的分支，这与上一版的既定行为一致，不是本轮修复要改变的范围。
 export function detectLocale(tags: readonly string[]): Locale {
   for (const raw of tags) {
-    const tag = raw.toLowerCase()
-    const m = PRIMARY_SUBTAG.exec(tag)
-    if (!m) continue // 语法不合法（形状不对，或像 'en-' 这样缺了尾随子标签的残标签）：跳过，继续找下一个
-    const primary = m[1]
-    if (primary === 'zh') {
-      if (/^zh-(tw|hk|mo)\b/.test(tag) || tag.startsWith('zh-hant')) return 'zh-Hant'
+    let loc: Intl.Locale
+    try {
+      loc = new Intl.Locale(raw)
+    } catch {
+      continue // 语法不合法（Intl.Locale 构造时抛 RangeError）：跳过，继续找下一个
+    }
+    const { language, script, region } = loc
+    if (language === 'zh') {
+      if (script === 'Hant' || region === 'TW' || region === 'HK' || region === 'MO') return 'zh-Hant'
       return 'zh-Hans'
     }
-    if (primary === 'ja') return 'ja'
+    if (language === 'ja') return 'ja'
     return 'en'
   }
   return 'zh-Hans'
