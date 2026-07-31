@@ -42,6 +42,50 @@ if (!existsSync(KC3_LICENSE_PATH)) {
 }
 const kc3LicenseText = loadText(KC3_LICENSE_PATH).trimEnd()
 
+// LICENSE 存在不等于内容对：一个被截断成空文件、误放了别的许可证全文、或
+// 随手写的占位符，都能通过上面的 existsSync 检查，但下面 buildThirdPartyNotice()
+// 会把这份文本原样转录成"MIT 许可声明"——转录的前提是这份文本真的是 MIT
+// 声明，否则就是在合法地声明一件不存在的事。这里只做宽松的特征匹配（标题行
+// + "Permission is hereby granted, free of charge" 那句 MIT 标志性授权语句），
+// 不逐字比对 SPDX 官方模板：不同项目/年份的 MIT 声明在版权行、换行、空白上
+// 有正常的书写差异，逐字比对会连真实合法的 MIT 声明也一并拒绝；这里要拦的是
+// "完全不是 MIT 文本"，不是"和某个模板差一个字符"。
+if (!/\bMIT License\b/i.test(kc3LicenseText) || !/Permission is hereby granted, free of charge/i.test(kc3LicenseText)) {
+  console.error(`${KC3_LICENSE_PATH} 存在，但内容不像 MIT 许可证全文`)
+  console.error('校验不到 MIT 的标志性文本（标题行 / "Permission is hereby granted, free of charge" 那句授权语句）——')
+  console.error('可能是空文件、被截断，或误放了别的许可证；拒绝继续同步（不产出一份声明内容对不上实际许可证的转录）。')
+  process.exit(1)
+}
+
+// 产出数据的出处记录（THIRD_PARTY_NOTICES / _meta.json）精确到 KC3 clone
+// 的某个 commit——如果这次实际读到的内容混了尚未提交的本地改动，"来自
+// commit X"就是一句假话：commit X 那次提交里根本没有这些改动。必须在读取
+// 任何一份 KC3 数据（items/ships/ctype.json 等，下面从 `start2 = load(...)`
+// 开始）**之前**核实工作区干净，理由与上面 LICENSE 检查完全一样——事后
+// （比如靠 validate() 报错）发现不了这个问题：数据内容本身可能是"合法"的
+// 译名，只是出处记录会撒谎，指向一个不包含这些内容的 commit。
+let commit = null
+try {
+  commit = execFileSync('git', ['-C', KC3, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+} catch {
+  // 不是 git 仓库（或 git 不可用）时留 null，不因此失败——provenance 缺失
+  // 不是数据缺失，_meta.json/THIRD_PARTY_NOTICES 会如实标注"未知"，不是在
+  // 撒谎；没有 commit 也就没有"脏"这个概念可言，下面的脏检查因此无从做起。
+}
+if (commit !== null) {
+  const dirtyStatus = execFileSync('git', ['-C', KC3, 'status', '--porcelain'], { encoding: 'utf8' })
+  if (dirtyStatus.trim() !== '') {
+    console.error(`${KC3} 工作区不干净（有未提交的改动），拒绝以它作为同步数据源：`)
+    console.error(dirtyStatus.trimEnd())
+    console.error('')
+    console.error(`这些改动一旦被读进本次同步，产出数据里就可能混入未提交的内容，但出处记录只会`)
+    console.error(`写 commit ${commit}——那次提交并不包含这些改动，记录会失实。`)
+    console.error('解决办法二选一：在 KC3 clone 里 git commit / git stash 这些改动，或者换一份干净的 clone/checkout 后重试。')
+    process.exit(1)
+  }
+}
+console.log(`数据源：KC3Kai/kc3-translations（MIT）commit ${commit ?? '未知'}`)
+
 /** 本项目 locale → KC3 目录名。ja 不对应任何目录，名称直接取自 start2。 */
 const KC3_DIR = { 'zh-Hans': 'scn', 'zh-Hant': 'tcn', en: 'en' }
 
@@ -135,11 +179,8 @@ for (const locale of ['ja', 'zh-Hans', 'zh-Hant', 'en']) {
   console.log(`[${locale}] 装备 ${Object.keys(items).length} / 舰船 ${Object.keys(ships).length} / 舰级 ${Object.keys(ctype).length} ${note}`)
 }
 
-let commit = null
-try {
-  commit = execFileSync('git', ['-C', KC3, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-} catch { /* 不是 git 仓库时留 null，不因此失败 —— provenance 缺失不是数据缺失 */ }
-console.log(`\n数据源：KC3Kai/kc3-translations（MIT）commit ${commit ?? '未知'}`)
+// commit/干净工作区的核验在文件顶部（读取任何 KC3 数据之前）已经做过，
+// 这里不重复——`commit` 是那段代码留下的同一个变量，下面直接用。
 
 const errors = validate(produced, { refEquipIds, playerShipIds, refCtypeIds, ctypeZhHans })
 
