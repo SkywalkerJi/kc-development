@@ -356,11 +356,21 @@ async function captureSnapshot(cdp) {
         secretarySelect: rect('#poolSelect'),
         flagshipInput: rect('#flagship'),
         suggestionsList: rect('.suggestions'),
-        // 额外多带一个：FlagshipSearch 自己的「秘书舰」标签同样吃
-        // --form-label-width，任务原文没点名它，但它与上面四个共同回答的是
-        // 同一个问题（标签是否会在窄视口把输入框挤到换行），多一个选择器的
-        // 成本可以忽略，就顺手带上了。
+        // 额外多带两个（⚠️ 这几行注释不能用反引号——本函数整体是一个用
+        // 反引号包起来的模板字符串，字符串内容原样发给浏览器执行，注释里
+        // 出现的反引号会被当成模板字符串的边界，把这段字符串截断，见本函数
+        // 上一次修订踩过的坑）：
+        // - FlagshipSearch 自己的「秘书舰」标签同样吃 --form-label-width，
+        //   任务原文没点名它，但它与上面四个共同回答的是同一个问题（标签是
+        //   否会在窄视口把输入框挤到换行），多一个选择器的成本可以忽略。
+        // - .left-panel 是"标签+控件够不够宽"这个问题里真正的分母——
+        //   .left-panel 的 flex: 0 0 45% 外面还套着 .development-view 的
+        //   max-width: 1200px + padding: 20px，以及 main 的 padding: 1rem，
+        //   45% 不是直接乘视口宽度就完，实测这个盒子的宽度才能算出"标签+
+        //   控件"与"可用空间"的真实对比，不用再对着一堆 padding/max-width
+        //   心算、心算还容易算错（这条正是上一轮报告审阅时被指出的错误）。
         flagshipLabel: rect('.flagship-search label'),
+        leftPanel: rect('.left-panel'),
       },
     };
   })()`)
