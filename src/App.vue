@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import DataInitializer from './components/DataInitializer.vue'
+import LocaleSwitcher from './components/LocaleSwitcher.vue'
 
 // 此前这里有一段「数据加载状态面板」：三个 computed（舰船数/装备数/同型舰
 // 组数）、三个 ref（dataError/dataLoaded/errorMessage），外加 onMounted 里
@@ -17,6 +18,7 @@ import DataInitializer from './components/DataInitializer.vue'
 
 <template>
   <main>
+    <LocaleSwitcher />
     <DataInitializer />
     <RouterView />
   </main>

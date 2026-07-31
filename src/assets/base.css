@@ -44,6 +44,45 @@
   --form-control-width: 300px;
 }
 
+/*
+ * 按语言分流字体栈与标签宽度。选择器用 :lang()，值由 i18n 的 setLocale()
+ * 写在 <html lang> 上（首帧的初值来自 index.html）。
+ *
+ * 为什么必须分流：
+ * - 上面 --app-font-sans 是**简中优先**的（PingFang SC / Microsoft YaHei /
+ *   Noto Sans CJK SC）。日文与繁中共用它会渲染出错误的地区字形变体 ——
+ *   同一个码位在 SC / TC / JP 三套字体里字形不同（骨、直、类似的汉字尤其明显）。
+ * - --form-label-width 是从「秘书舰类型：」6 个全角字符推出来的 6.5em。
+ *   英文的 "Secretary Ship Type:" 会撑爆它，下拉框与搜索框左边缘随之错开。
+ *
+ * ⚠️ 下面三个宽度值是按「最长标签字符数 + 0.5em 余量」估的初值。
+ * 现有注释里那句「实测 input.x - label.right === 0」说明这个项目对这类值
+ * 是要量的：改完请在浏览器里切到各语言，用 getBoundingClientRect 核对
+ * 下拉框与搜索框左边缘确实对齐，并把实测依据写回这里。
+ */
+:root:lang(ja) {
+  --form-label-width: 7.5em;  /* 「秘書艦タイプ：」7 个全角字符 + 0.5em */
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,
+    "Noto Sans CJK JP", "Source Han Sans JP", sans-serif;
+}
+
+:root:lang(zh-Hant) {
+  --form-label-width: 6.5em;  /* 「秘書艦類型：」6 个全角字符 + 0.5em */
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC",
+    "Source Han Sans TC", sans-serif;
+}
+
+:root:lang(en) {
+  --form-label-width: 11em;   /* "Secretary Ship Type:" 20 个拉丁字符，均宽约 0.5em */
+  --app-font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
 body {
   margin: 0;
   padding: 0;
