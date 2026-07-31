@@ -28,7 +28,7 @@
  * 见 captureSnapshot 里的说明）。
  *
  * 它既是一份报告，也是一道关卡：上面这些量不只是被记进
- * .superpowers/sdd-round2/render-verification.json，assertSnapshot() 还会
+ * .verify-render/render-verification.json，assertSnapshot() 还会
  * 拿它们跟期望值比较。这份"期望值"不是单一种比法——文案类的量（标题、
  * 两个标签、两张表头、建议列表前几条、字体栈、--form-label-width）逐字
  * 精确到每个语言各自的期望字符串；秘书舰下拉框/装备按钮这两张数据驱动、
@@ -75,7 +75,11 @@ import { randomUUID } from 'node:crypto'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = join(ROOT, 'dist')
-const OUT_DIR = join(ROOT, '.superpowers', 'sdd-round2')
+// 这份报告以前写在 `.superpowers/sdd-round2/` 下——那是某一次一次性任务
+// 会话的工作目录，.gitignore 里对它的说明是「SDD 执行期临时产物」。把一个
+// 常驻工具的输出寄放在那种目录里，路径本身既说明不了它是什么，也会随那次
+// 会话的痕迹一起被清掉。改到一个按用途命名的目录。
+const OUT_DIR = join(ROOT, '.verify-render')
 const OUT_JSON = join(OUT_DIR, 'render-verification.json')
 
 // 与 vite.config.ts 的 `base: '/kc-development-tools/'`（生产构建）+ 路由用
@@ -736,8 +740,9 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b)
  * 理由就是查这几件事有没有做到——只记录数字、不拿它们跟期望值比较，
  * 等于没做核验：改造前 hardFailures 只收"整个 locale 核验失败"这一种
  * 情况，搜索空结果、建议列表零条、元素缺失、建议列表与输入框没对齐，
- * 全部只进 JSON、不进 hardFailures，退出码永远是 0（复现记录见
- * .superpowers/sdd-round3/report.md 的 Path B 部分）。round4 Fix 2 在此
+ * 全部只进 JSON、不进 hardFailures，退出码永远是 0（这条当初是实测复现出来
+ * 的，不是推断；原始复现记录写在一份未入库的会话报告里，这里不再指向那个
+ * 路径——指着一个仓库里根本不存在的文件比不指更糟）。round4 Fix 2 在此
  * 基础上补上"记录的数字对不对"——round3 版本对文案类字段大多只查非空，
  * 一份整体回退成另一种语言的文案、一个整个变了的字体栈、一个悄悄改小的
  * --form-label-width，全部一样是"非空"，round3 的版本会照样放行。

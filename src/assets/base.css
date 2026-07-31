@@ -8,8 +8,8 @@
  * 默认样式上（实测 body 的 computed font-family 为 "Times New Roman"、
  * margin 为 8px，两条声明一条都没生效）。
  *
- * 反过来，App.vue 里的 `main { padding: 1rem }` 必须**留在** scoped 块内：
- * HomeView.vue 也有一个裸 <main>，那条规则一旦全局化就会连带影响它。
+ * 反过来，App.vue 里的 `main { padding: 1rem }` 留在它自己的 scoped 块内：
+ * 那是 App.vue 的布局，不是全站规则。
  */
 
 :root {
@@ -72,6 +72,18 @@
   --c-success: #2f7d4f;
   --c-danger: #c0392b;
   --c-danger-soft: #fdeceb;
+
+  /*
+   * 页面栏宽契约：页头、主内容、页脚、加载面板四处必须取同一组值，左右
+   * 边缘才对得齐。
+   *
+   * 这两条以前是四个组件各写一遍 1200px / 20px，每处再挂一句「改一个要
+   * 一起改」的注释——那是把一个契约拆成四份副本再用注释去维系它，正是
+   * 这套令牌该解决的问题（同 vite.config.ts 里 base 那三处副本的教训）。
+   * 现在四处都读这两个变量，改一处即可。
+   */
+  --page-max-width: 1200px;
+  --page-gutter: 20px;
 
   --radius-sm: 4px;
   --radius: 8px;

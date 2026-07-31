@@ -1,38 +1,32 @@
-# Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
 node_modules
-.DS_Store
 dist
 dist-ssr
 coverage
+*.tsbuildinfo
+
+.DS_Store
 *.local
+*.sw?
 
-/cypress/videos/
-/cypress/screenshots/
-
-# Editor directories and files
+# 编辑器。.vscode/ 下整体忽略，但保留推荐扩展清单——它是给协作者看的项目
+# 配置，不是个人偏好。
+#
+# ⚠️ 这两行的顺序与写法都不能改成一条裸 `.vscode/`：目录级的忽略会让 git
+# 根本不下探进去，后面的 `!` 否定规则也就永远匹配不上。此前这个文件里恰好
+# 同时存在 `.vscode/*`（正确）与一条裸 `.vscode/`（错误），后者把
+# extensions.json 的白名单整个废掉了。
 .vscode/*
 !.vscode/extensions.json
 .idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-*.tsbuildinfo
-.history/ 
-node_modules
+# 渲染核验（pnpm verify-render）写出的诊断报告，每次运行都会被覆盖
+.verify-render/
 
-.vscode/
-# SDD 执行期临时产物
+# 早期 SDD 会话的临时产物目录。仓库里已经没有任何东西往这里写，保留这条
+# 忽略只是为了不把本机上残留的那些旧报告误提交进来。
 .superpowers/
 
 # 本项目统一用 pnpm，不保留 npm 锁文件

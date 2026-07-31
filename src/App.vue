@@ -43,8 +43,10 @@ import DataInitializer from './components/DataInitializer.vue'
  * 规则已移到 src/assets/base.css（由 main.ts 引入），那里还说明了为什么
  * 字体栈不能只写 Arial。
  *
- * 下面这条 main 规则则相反，**必须**留在 scoped 里：HomeView.vue 也有一个
- * 裸 <main>，全局化会连它一起加上内边距。
+ * 下面这条 main 规则则相反，留在 scoped 里就对了：它是 App.vue 自己的布局，
+ * 不是全站规则。（这条注释以前的理由是「HomeView.vue 也有一个裸 <main>，
+ * 全局化会连它一起加上内边距」——那个只有空 <main>、从未被路由到的脚手架
+ * 残留组件已经删了，理由随之作废，但结论没变。）
  */
 main {
   padding: 1rem;

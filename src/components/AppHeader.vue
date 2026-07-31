@@ -3,29 +3,18 @@
     <div class="app-header-inner">
       <div class="brand">
         <!--
-          与 public/favicon.svg 同一套形状，这里内联而不是 <img src>：内联的
-          SVG 不额外发一次请求、也不会在弱网下先空一块再补上（页头是首屏最
-          先看到的东西）。两处形状要一起改。
-          aria-hidden：紧挨着的 h1 已经把站名念出来了，图标再被读一遍是噪音。
+          引用 public/favicon.svg，不在这里复制一份路径数据——站标形状只有
+          那一个真值源。
+
+          BASE_URL 拼前缀是本仓库既有的做法（DevelopmentView 的
+          getEquipIcon 同款）：public/ 下的资源在生产构建里位于
+          /kc-development-tools/ 之下，写成 /favicon.svg 会指到域名根。
+
+          几乎不产生额外开销：同一个文件浏览器本来就要为标签页图标取一次
+          （<link rel="icon">），这里命中的是同一份缓存。
+          alt=""：紧挨着的 h1 已经把站名念出来了，图标再被读一遍是噪音。
         -->
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="app-header-mark" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#3f8bc8" />
-              <stop offset="1" stop-color="#0e2a42" />
-            </linearGradient>
-          </defs>
-          <rect width="64" height="64" rx="14" fill="url(#app-header-mark)" />
-          <g
-            fill="none" stroke="#eaf3fa" stroke-width="4.5"
-            stroke-linecap="round" stroke-linejoin="round"
-          >
-            <circle cx="32" cy="14.5" r="4.75" />
-            <path d="M32 19.5v33" />
-            <path d="M20 25.5h24" />
-            <path d="M13 35c0 11.5 8.5 17.5 19 17.5S51 46.5 51 35" />
-          </g>
-        </svg>
+        <img class="brand-mark" :src="`${BASE_URL}favicon.svg`" alt="">
         <div class="brand-text">
           <!--
             全站唯一的 h1，用站名（title.app）而不是 title.development。
@@ -53,29 +42,17 @@
             noreferrer 顺带不泄露来源页地址。
           -->
           <a
+            v-for="link in LINKS"
+            :key="link.href"
             class="icon-link"
-            :href="REPO_URL"
+            :href="link.href"
             target="_blank"
             rel="noopener noreferrer"
-            :aria-label="$t('link.github')"
-            :title="$t('link.github')"
+            :aria-label="$t(link.label)"
+            :title="$t(link.label)"
           >
-            <!-- GitHub 官方 Octicon 的 mark-github 路径（16×16 网格） -->
-            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-            </svg>
-          </a>
-          <a
-            class="icon-link"
-            :href="X_URL"
-            target="_blank"
-            rel="noopener noreferrer"
-            :aria-label="$t('link.x')"
-            :title="$t('link.x')"
-          >
-            <!-- X 的品牌标（24×24 网格） -->
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117l11.966 15.644Z" />
+            <svg :viewBox="link.viewBox" fill="currentColor" aria-hidden="true">
+              <path :d="link.path" />
             </svg>
           </a>
         </nav>
@@ -90,8 +67,40 @@ import LocaleSwitcher from './LocaleSwitcher.vue'
 // LocaleSwitcher.vue / FlagshipSearch.vue / DataInitializer.vue 的做法，
 // 这样组件被 createApp(X).mount() 单独挂载时模板里的 $t 也解析得到。
 import { t as $t } from '@/i18n'
+import type { MsgKey } from '@/i18n/types'
 // 站外地址集中在 @/links，页脚也从那里取同一份仓库地址，见该文件的注释
 import { REPO_URL, X_URL } from '@/links'
+
+/** public/ 下的资源在生产构建里位于 base 之下，拼前缀的做法同
+ *  DevelopmentView 的 getEquipIcon。 */
+const BASE_URL = import.meta.env.BASE_URL
+
+/**
+ * 页头右侧的两个图标链接。
+ *
+ * 写成数据 + v-for 而不是两段几乎一样的 <a>：两者只有 href、无障碍名称
+ * 与图标路径三处不同，其余（class / target / rel / aria-label 与 title
+ * 取同一个 key）逐字相同，展开写等于把这套约定复制两遍，加第三个链接时
+ * 还要再复制一遍。
+ *
+ * viewBox 各自不同不是笔误：两个品牌标由各自官方按不同网格绘制
+ * （GitHub 的 Octicon 是 16×16，X 的品牌标是 24×24），重绘到同一网格
+ * 只会引入手工误差，交给 viewBox 做归一即可。
+ */
+const LINKS: { href: string; label: MsgKey; viewBox: string; path: string }[] = [
+  {
+    href: REPO_URL,
+    label: 'link.github',
+    viewBox: '0 0 16 16',
+    path: 'M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z',
+  },
+  {
+    href: X_URL,
+    label: 'link.x',
+    viewBox: '0 0 24 24',
+    path: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117l11.966 15.644Z',
+  },
+]
 </script>
 
 <style scoped>
@@ -101,15 +110,12 @@ import { REPO_URL, X_URL } from '@/links'
   box-shadow: var(--shadow-sm);
 }
 
-/*
- * max-width 与 DevelopmentView 的 .development-view 取同一个 1200px：页头
- * 内容的左右边缘要与下方主内容对齐，两个值必须一致（改一个就要改另一个）。
- * padding 比主内容大一点，让页头显得松一些。
- */
+/* 栏宽与左右留白读全局令牌（定义与理由见 assets/base.css），与主内容、
+   页脚共用同一份契约 */
 .app-header-inner {
-  max-width: 1200px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
-  padding: 14px 20px;
+  padding: 14px var(--page-gutter);
   display: flex;
   align-items: center;
   justify-content: space-between;

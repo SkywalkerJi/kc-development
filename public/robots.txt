@@ -3,19 +3,17 @@
 # ⚠️ 效力有限，别高估它：本站是 GitHub Pages 的**项目页**，最终地址是
 # https://御坂美琴.cn/kc-development-tools/（自定义域名配置在用户根仓库
 # skywalkerji.github.io 上）。爬虫只读**域名根**下的
-# https://御坂美琴.cn/robots.txt —— 那个位置由用户根仓库提供，不是本仓库，
-# 放在子路径下的这一份爬虫不会去取（实测域名根当前是 404，也就是说那份
-# robots.txt 还不存在）。
+# https://御坂美琴.cn/robots.txt —— 那个位置由用户根仓库
+# （SkywalkerJi/skywalkerji.github.io）提供，不是本仓库，放在子路径下的
+# 这一份爬虫不会去取。
 #
-# 保留它的理由只有两条：一是各类 SEO 体检工具会去抓 <站点根>/robots.txt
-# 并把 404 记成一条问题，二是万一将来本仓库自己接管某个域名的根路径，
-# 这个文件立刻生效、不用再想起来补。
+# 真正生效的是那一份：它已经建好，并在里面列出了本项目的 sitemap
+# （见该仓库根目录的 robots.txt）。本文件下面那行 Sitemap 指令因此是**冗余
+# 副本**，改本项目的 sitemap 地址时两处要一起改。
 #
-# 同理，下面这行 Sitemap 指令实际上也不会被读到；sitemap.xml 真正的用法是
-# 在 Google Search Console 里对这个子目录属性手动提交。
-#
-# 真要让 robots 生效，正确做法是在 skywalkerji.github.io 那个仓库的根目录
-# 放一份 robots.txt —— 那超出本仓库的范围。
+# 既然读不到，为什么还留着它：一是各类 SEO 体检工具会去抓
+# <站点根>/robots.txt 并把 404 记成一条问题，二是万一将来本仓库自己接管
+# 某个域名的根路径，这个文件立刻生效、不用再想起来补。
 
 User-agent: *
 Allow: /

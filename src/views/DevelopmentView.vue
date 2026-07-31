@@ -843,13 +843,10 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 </script>
 
 <style scoped>
-/*
- * max-width 与 AppHeader 的 .app-header-inner、AppFooter 的
- * .app-footer-inner 同为 1200px，三者左右边缘对齐；改一个要一起改。
- */
+/* 栏宽与左右留白读全局令牌，见 assets/base.css */
 .development-view {
-  padding: 20px;
-  max-width: 1200px;
+  padding: var(--page-gutter);
+  max-width: var(--page-max-width);
   margin: 0 auto;
 }
 

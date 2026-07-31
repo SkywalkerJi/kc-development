@@ -38,12 +38,11 @@ import { KC3_TRANSLATIONS_URL, LICENSE_URL } from '@/links'
   font-size: 0.8rem;
 }
 
-/* max-width 与页头 .app-header-inner、主内容 .development-view 同为
-   1200px，三者左右边缘对齐；改一个要一起改 */
+/* 栏宽与左右留白读全局令牌，见 assets/base.css */
 .app-footer-inner {
-  max-width: 1200px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
-  padding: 16px 20px 22px;
+  padding: 16px var(--page-gutter) 22px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;

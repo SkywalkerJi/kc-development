@@ -170,7 +170,7 @@ onMounted(async () => {
  * 等 20 秒然后判失败。真要做常驻状态指示，换一个 class 名。
  */
 .data-loading {
-  max-width: 1200px;   /* 与 .development-view / 页头 / 页脚 对齐 */
+  max-width: var(--page-max-width);   /* 与页头 / 主内容 / 页脚 同一份契约 */
   margin: 0 auto 1rem;
   padding: 1rem;
   background-color: var(--c-surface);

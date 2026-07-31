@@ -37,7 +37,7 @@ src/
   assets/      base.css：字体栈、设计令牌（颜色/圆角/阴影）与深色模式
   links.ts     全部站外链接（仓库 / X / 上游译名库 / 许可）的唯一出处
 public/data/   游戏数据与译名（i18n/ 下按语言分目录）
-public/        另有站点资产：favicon.svg / apple-touch-icon.png / og-image.png
+public/        另有站点资产：favicon.svg / apple-touch-icon.png / og-image.jpg
                / robots.txt / sitemap.xml / 404.html
 scripts/       数据同步、渲染核验、站点资产生成
 scripts/assets/  位图资产的 HTML 源文件
@@ -63,7 +63,7 @@ pnpm verify-render   # 内部先 pnpm build，再驱动真实 headless Chrome
 对 `zh-Hans` / `zh-Hant` / `ja` / `en` 各跑一轮，在 1400px 与 1024px 两档视口下核验文案、`font-family`、以及标签 / 下拉框 / 输入框 / 建议列表的真实几何。
 
 - ⚠️ 依赖本机 `/usr/bin/google-chrome`，**故意不接入 `pnpm test`** —— 没装 Chrome 的机器不该因此变红
-- 结果写入 `.superpowers/sdd-round2/render-verification.json`；JSON 是证据，退出码才是判决
+- 结果写入 `.verify-render/render-verification.json`（已 gitignore）；JSON 是证据，退出码才是判决
 - `VERIFY_RENDER_PORT` 仅用于手动构造「端口被占用」场景，正常使用不需要设置
 
 ## SEO
@@ -78,13 +78,13 @@ pnpm verify-render   # 内部先 pnpm build，再驱动真实 headless Chrome
 | `scripts/verify-render.mjs` | `EXPECTED.<locale>.title`（四条） |
 | `src/i18n/__tests__/index.spec.ts` | 那条写死 en 站名的断言 |
 | `index.html` | zh-Hans 名出现 8 次：`<title>`、`description`、`og:site_name`、`og:title`、`og:description`、`og:image:alt`、JSON-LD `name`、`<noscript>` 的 `<h1>`；JSON-LD `alternateName` 里另有 ja 与 en 各一份 |
-| `scripts/assets/og-image.html` | 卡片上的 `<h1>`；改完要 `pnpm gen-assets` 重新生成 PNG |
+| `scripts/assets/og-image.html` | 卡片上的 `<h1>`；改完要 `pnpm gen-assets` 重新生成分享图 |
 
 其它约定：
 
 - 指向自家静态资源的路径一律走 `%BASE_URL%`（vite 构建期替换成 `base`）。写成 `/xxx` 在 GitHub Pages 项目页上会指到域名根，那是**别的仓库**的地盘
 - `canonical` / `og:url` / `og:image` 必须是绝对 URL，带尾斜杠、不带 hash
-- `public/robots.txt` 在项目页部署下**读不到**（爬虫只读域名根的那一份，而那份由用户根仓库提供、当前是 404），`sitemap.xml` 需要在 Search Console 手动提交，两者都不要当成已生效的 SEO 成果 —— 详见各自文件内的说明
+- `public/robots.txt` 在项目页部署下**读不到**（爬虫只读域名根的那一份）。真正生效的是 `SkywalkerJi/skywalkerji.github.io` 仓库根目录的 `robots.txt`，本项目的 `sitemap.xml` 已经列在那里；本仓库这一份是冗余副本，改 sitemap 地址要两处一起改 —— 详见两个文件内的说明
 - 没有 `hreflang`：四种语言共用同一个 URL，写了是假信息
 
 ### 站点地址
@@ -100,14 +100,14 @@ pnpm verify-render   # 内部先 pnpm build，再驱动真实 headless Chrome
 | 文件 | 说明 |
 | --- | --- |
 | `public/favicon.svg` | 手写的矢量源，是站标形状的唯一真值源 |
-| `public/apple-touch-icon.png` | 180×180，由 `scripts/assets/icon.html` 截图生成 |
-| `public/og-image.png` | 1200×630 分享卡片，由 `scripts/assets/og-image.html` 截图生成 |
+| `public/apple-touch-icon.png` | 180×180 PNG（需要 alpha），由 `scripts/assets/icon.html` 截图生成 |
+| `public/og-image.jpg` | 1200×630 分享卡片，由 `scripts/assets/og-image.html` 截图生成 |
 
-两张 PNG 的产物已提交，只有改了源文件才需要 `pnpm gen-assets` 重跑并把新 PNG 一起提交。该脚本与 `verify-render` 一样依赖本机 `/usr/bin/google-chrome`，**故意不接入构建与 CI**。
+两个产物已提交，只有改了源文件才需要 `pnpm gen-assets` 重跑并把新产物一起提交。该脚本与 `verify-render` 一样依赖本机 `/usr/bin/google-chrome`，**故意不接入构建与 CI**。
 
-必须是位图而不是复用 SVG：X 不接受 SVG 作 `og:image`，iOS 主屏图标也只认位图。
+必须是位图而不是复用 SVG：X 不接受 SVG 作 `og:image`，iOS 主屏图标也只认位图。分享卡片用 JPEG（整幅是渐变，同一张图 PNG 392 KB、q92 的 JPEG 73 KB），主屏图标只能是 PNG（圆角之外要透明）。
 
-⚠️ 站标形状目前有四份副本（`favicon.svg`、`scripts/assets/og-image.html`、`src/components/AppHeader.vue`、`public/404.html`）。后三处内联而不引用，各有原因（截图脚本的外链易静默失效、页头要避免首屏多一次请求、`public/` 下的文件读不到构建产物），改图标要四处一起改。
+⚠️ 站标形状有两份副本：`public/favicon.svg`（唯一真值源）与 `public/404.html`（内联）。`404.html` 在 `public/` 下由 vite 原样拷贝、读不到任何构建期常量，引用它就要在那个文件里再添一份 base 路径副本 —— 不如内联八行 SVG。其余用到站标的地方（页头、分享卡片源、图标源）都是引用 `favicon.svg`，不复制。
 
 ## 部署
 

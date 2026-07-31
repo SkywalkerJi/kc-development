@@ -2,19 +2,19 @@
 /**
  * 由矢量源生成两张位图资产：
  *
- *   scripts/assets/icon.html      →  public/apple-touch-icon.png  (180×180)
- *   scripts/assets/og-image.html  →  public/og-image.png          (1200×630)
+ *   scripts/assets/icon.html      →  public/apple-touch-icon.png  (180×180, PNG)
+ *   scripts/assets/og-image.html  →  public/og-image.jpg          (1200×630, JPEG)
  *
  * 用法：`node scripts/gen-assets.mjs`
  *
  * ⚠️ **一次性工具，刻意不接进 `pnpm build` / CI**，理由与
  * scripts/verify-render.mjs 完全相同：它依赖本机装有
  * /usr/bin/google-chrome，没有 Chrome 的机器上构建不该因此失败。产物
- * （两张 PNG）已经提交进仓库，正常开发/部署不需要跑这个脚本，只有改了
+ * （两张位图）已经提交进仓库，正常开发/部署不需要跑这个脚本，只有改了
  * public/favicon.svg 或 scripts/assets/*.html 之后才需要重跑一次、把新
- * PNG 一起提交。
+ * 产物一起提交。
  *
- * 为什么需要 PNG（而不是到处直接用 SVG）：
+ * 为什么需要位图（而不是到处直接用 SVG）：
  * - `og:image`：X（Twitter）与多数社交抓取器不接受 SVG。
  * - `apple-touch-icon`：iOS 主屏图标只认位图。
  * 浏览器标签页图标那一路仍然直接用 public/favicon.svg，不经过这里。
@@ -59,12 +59,18 @@ const TARGETS = [
   },
   {
     source: join(ROOT, 'scripts', 'assets', 'og-image.html'),
-    out: join(ROOT, 'public', 'og-image.png'),
+    out: join(ROOT, 'public', 'og-image.jpg'),
     width: 1200,
     height: 630,
     // 分享卡片自己铺满了背景，透不透明无所谓；显式给 false 免得将来
     // 有人看到两条都写 true 而以为这是必需项
     transparent: false,
+    // JPEG 而不是 PNG：这张图整幅是渐变，PNG 的无损压缩对渐变几乎无能为力
+    // （实测 392 KB），换成 q92 的 JPEG 约 90 KB，肉眼看不出差别。它是被
+    // 抓取器与聊天客户端反复取用的资源，四倍体积的差别是实打实的。
+    // apple-touch-icon 不能这么干：它需要 alpha 通道，JPEG 没有。
+    format: 'jpeg',
+    quality: 92,
   },
 ]
 
@@ -168,7 +174,7 @@ async function main() {
     await cdp.send('Page.enable')
     await cdp.send('Runtime.enable')
 
-    for (const { source, out, width, height, transparent } of TARGETS) {
+    for (const { source, out, width, height, transparent, format = 'png', quality } of TARGETS) {
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: false,
       })
@@ -186,14 +192,18 @@ async function main() {
       })()`))
 
       const { data } = await cdp.send('Page.captureScreenshot', {
-        format: 'png',
+        format,
+        // quality 只对 jpeg 有意义，png 分支下 CDP 会忽略它；显式判断一次
+        // 免得 undefined 被序列化进参数里
+        ...(quality === undefined ? {} : { quality }),
         // clip 显式给全尺寸 + scale 1：不依赖"不给 clip 时恰好等于视口"这个
         // 隐式行为，产出的像素尺寸就是这里写的数
         clip: { x: 0, y: 0, width, height, scale: 1 },
         captureBeyondViewport: true,
       })
-      writeFileSync(out, Buffer.from(data, 'base64'))
-      console.log(`[gen-assets] ${out}  (${width}×${height})`)
+      const bytes = Buffer.from(data, 'base64')
+      writeFileSync(out, bytes)
+      console.log(`[gen-assets] ${out}  (${width}×${height}, ${Math.round(bytes.length / 1024)} KB)`)
     }
   } finally {
     cdp?.close()

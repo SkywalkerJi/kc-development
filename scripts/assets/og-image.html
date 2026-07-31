@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <!--
-  public/og-image.png 的**源文件**（1200×630，社交平台分享卡片用图）。
-  由 scripts/gen-assets.mjs 用本机 Chrome 截图成 PNG，两者都提交进仓库
-  ——只提交 PNG 会让下一个人拿到一个改不动、也说不清怎么来的二进制。
+  public/og-image.jpg 的**源文件**（1200×630，社交平台分享卡片用图）。
+  由 scripts/gen-assets.mjs 用本机 Chrome 截成图，源与产物都提交进仓库
+  ——只提交位图会让下一个人拿到一个改不动、也说不清怎么来的二进制。
 
   为什么是 HTML 而不是直接给一张 SVG：X（Twitter）的抓取器不接受 SVG 作
-  og:image，最终必须是 PNG/JPEG；既然都要过一次渲染器，用 HTML 排版比在
-  SVG 里手算每一行文字的 x/y 省事得多，中日文换行、字距也由浏览器负责。
+  og:image，最终必须是位图；既然都要过一次渲染器，用 HTML 排版比在 SVG
+  里手算每一行文字的 x/y 省事得多，中日文换行、字距也由浏览器负责。
 
   字体只写本机装得到的中文族，不引外部字体：这个文件永远在本地跑，联网
-  拉字体只会让离线时产出一张字体回退过的图，而 PNG 一旦生成就看不出来了。
+  拉字体只会让离线时产出一张字体回退过的图，而图一旦生成就看不出来了。
 -->
 <html lang="zh-Hans">
 <head>
@@ -101,24 +101,9 @@
 </head>
 <body>
   <div class="brand">
-    <!-- 与 public/favicon.svg 同一套形状，内联在这里而不是 <img> 引用：
-         截图脚本用 file:// 打开本文件，外链一旦路径算错会静默出一张缺图的
-         PNG，而内联的形状不可能加载失败。两处形状要一起改。 -->
-    <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#3f8bc8"/>
-          <stop offset="1" stop-color="#0e2a42"/>
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-      <g fill="none" stroke="#eaf3fa" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="32" cy="14.5" r="4.75"/>
-        <path d="M32 19.5v33"/>
-        <path d="M20 25.5h24"/>
-        <path d="M13 35c0 11.5 8.5 17.5 19 17.5S51 46.5 51 35"/>
-      </g>
-    </svg>
+    <!-- 直接引用 public/favicon.svg，与姊妹文件 icon.html 的做法一致：
+         站标形状只有那一个真值源，这里不复制一份路径数据。 -->
+    <img class="mark" src="../../public/favicon.svg" alt="">
     <div class="brand-text">KANCOLLE TOOLS</div>
   </div>
 
