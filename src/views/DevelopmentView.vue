@@ -79,7 +79,8 @@
           <table>
             <thead>
               <tr>
-                <th>{{ $t('label.icon') }}</th>
+                <!-- 图标列表头刻意留空，理由见 <style> 里 .equipment-list th:first-child 的注释 -->
+                <th></th>
                 <th>{{ $t('label.equipment') }}</th>
                 <th>{{ $t('label.hitRate') }}</th>
                 <th>{{ $t('label.minResourceReq') }}</th>
@@ -916,7 +917,39 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   display: block;
 }
 
-/* 图标列定宽，避免某几行没有图标时列宽随内容跳动 */
+/*
+ * 图标列定宽，避免某几行没有图标时列宽随内容跳动。
+ *
+ * 这个 48px 是按图标本身定的（img 32px + 两侧 8px padding 正好 48px），
+ * 也就是说列宽从一开始就只为图标预留，没有给表头文字留余地：th 的左右
+ * padding 各 8px 吃掉 16px 后，文字可用宽度只剩 32px，而 ja 的
+ * 「アイコン」是 4 个全角片假名，按全角宽 ≈ 1em、根字号 16px 折算约
+ * 64px，塞不进 32px。
+ *
+ * 上面这些像素值都是照 CSS 声明值算出来的，**不是浏览器实测**——判断
+ * 依据是页面上实际观察到了换行，算术只用来解释成因，别把它当实测数字
+ * 引用（base.css 里 :lang(en) 那段就是心算值被实测推翻的先例）。其中
+ * 「根字号 16px 对表头成立」这一条查过：全项目只有
+ * .equipment-buttons button、LocaleSwitcher、FlagshipSearch 三处设了
+ * font-size，都不在这张表的祖先链上。
+ *
+ * 所以 <thead> 里这一列的表头留空，不再输出 $t('label.icon')。列的含义
+ * 由每行 <img> 上的 :alt="$t('alt.equipIcon')" 承担，读屏遍历单元格时
+ * 拿得到，空表头不构成可访问性倒退。
+ *
+ * 这个"留空"是被 scripts/verify-render.mjs 的 equipmentListHeaders 钉住
+ * 的（四个语言的期望值第一项都是空字符串），把 $t('label.icon') 加回来
+ * 会让 pnpm verify-render 报红。注意它故意不接入 pnpm test（依赖本机
+ * /usr/bin/google-chrome），CI 不跑，所以动这一列时要手动跑一次。
+ *
+ * 'label.icon' 这个 i18n key 虽然从此没有调用点，仍保留在四个语言文件
+ * 里，不要顺手删：MsgKey = keyof typeof zhHans，四个 messages/*.ts 又都
+ * 声明为 Record<MsgKey, string>，四者是被类型绑死的。这条实测过——只从
+ * zh-Hans.ts 删掉这一行再跑 pnpm type-check，en / ja / zh-Hant 三个文件
+ * 各报一条 TS2353（多余属性），要删就得四个文件一起动，代价大于收益。
+ * 注意 'alt.equipIcon' 是另一个 key，每个图标 <img> 都在用，更不能一起
+ * 清掉。
+ */
 .equipment-list th:first-child,
 .equipment-list td:first-child {
   width: 48px;

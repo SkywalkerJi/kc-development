@@ -661,7 +661,7 @@ const EXPECTED = {
     labelSecretaryType: '秘书舰类型：',
     labelSecretary: '秘书舰',
     recipeTableHeaders: ['秘书舰', '油', '弹', '钢', '铝', '总资源', '池类型', '出货率', '失败率'],
-    equipmentListHeaders: ['图标', '装备', '出货率', '最低资源要求'],
+    equipmentListHeaders: ['', '装备', '出货率', '最低资源要求'],
     formLabelWidthRaw: '6.5em',
     bodyFontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif',
     suggestionsSample: ['金刚（こんごう）', '金刚改二（こんごう）', '金刚改（こんごう）', '金刚改二丙（こんごう）'],
@@ -673,7 +673,7 @@ const EXPECTED = {
     labelSecretaryType: '秘書艦類型：',
     labelSecretary: '秘書艦',
     recipeTableHeaders: ['秘書艦', '油', '彈', '鋼', '鋁', '總資源', '池類型', '出貨率', '失敗率'],
-    equipmentListHeaders: ['圖示', '裝備', '出貨率', '最低資源需求'],
+    equipmentListHeaders: ['', '裝備', '出貨率', '最低資源需求'],
     formLabelWidthRaw: '6.5em',
     bodyFontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Source Han Sans TC", sans-serif',
     suggestionsSample: ['金剛（こんごう）', '金剛改二（こんごう）', '金剛改（こんごう）', '金剛改二丙（こんごう）'],
@@ -685,7 +685,7 @@ const EXPECTED = {
     labelSecretaryType: '秘書艦タイプ：',
     labelSecretary: '秘書艦',
     recipeTableHeaders: ['秘書艦', '燃料', '弾薬', '鋼材', 'ボーキ', '総資源', 'プール種別', '開発率', '失敗率'],
-    equipmentListHeaders: ['アイコン', '装備', '開発率', '最低資源'],
+    equipmentListHeaders: ['', '装備', '開発率', '最低資源'],
     formLabelWidthRaw: '7.5em',
     bodyFontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Source Han Sans JP", sans-serif',
     suggestionsSample: ['金剛（こんごう）', '金剛改二（こんごう）', '金剛改（こんごう）', '金剛改二丙（こんごう）'],
@@ -697,7 +697,7 @@ const EXPECTED = {
     labelSecretaryType: 'Secretary Ship Type:',
     labelSecretary: 'Secretary',
     recipeTableHeaders: ['Secretary', 'Fuel', 'Ammo', 'Steel', 'Bauxite', 'Total', 'Pool Type', 'Rate', 'Fail Rate'],
-    equipmentListHeaders: ['Icon', 'Equipment', 'Rate', 'Min. Resources'],
+    equipmentListHeaders: ['', 'Equipment', 'Rate', 'Min. Resources'],
     formLabelWidthRaw: '9.95em',
     bodyFontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Source Han Sans JP", sans-serif',
     suggestionsSample: ['Kongou（こんごう）', 'Kongou Kai Ni（こんごう）', 'Kongou Kai（こんごう）', 'Kongou Kai Ni C（こんごう）'],
@@ -769,6 +769,12 @@ function assertSnapshot(locale, width, snapshot) {
   }
 
   if (snapshot.equipmentListHeaders.length === 0) fail('装备列表表头缺失')
+  // 四个语言的 equipmentListHeaders 第一项都是空字符串，这不是漏填：图标列的
+  // 表头文字是**刻意**去掉的（48px 的定宽列减去 th 两侧 padding 只剩 32px，
+  // ja 的「アイコン」在页面上会折行），理由与取舍见 DevelopmentView.vue 里
+  // .equipment-list th:first-child 的注释。这里保留这个空位而不是把数组缩成
+  // 三项，是为了继续钉住"这张表是四列、且图标列排在最前"——列数或列序错了
+  // 仍然会被这条断言抓到。谁要是把 $t('label.icon') 加回模板，这里也会红。
   if (!deepEqual(snapshot.equipmentListHeaders, expect.equipmentListHeaders)) {
     fail(`装备列表表头=${JSON.stringify(snapshot.equipmentListHeaders)}，应为 ${JSON.stringify(expect.equipmentListHeaders)}`)
   }
