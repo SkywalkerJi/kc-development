@@ -44,23 +44,26 @@ pnpm sync-i18n --kc3 /path/to/kc3-translations
 `zh-Hans` **不产出 `ctype.json`**：`public/data/ctype.json` 本身就是那份数据。
 
 校验全部通过后，脚本还会写一份 `public/data/i18n/_meta.json`，记录数据源
-URL、许可证、本次同步用的 KC3 commit（解析不到时诚实记为 `null` 而不是
-伪造一个像哈希的占位符）与四语言各自的产出计数——控制台输出不随仓库分发，
-这份文件是产出数据出处的唯一持久记录。它不在 `tests/oracle.spec.ts` 的
-哈希钉死范围内。
+URL、许可证、本次同步用的 KC3 commit（`--kc3` 指向目录的 `git rev-parse
+HEAD` 原样结果——记录性质，不核验这个目录是否真的是 KC3Kai/kc3-translations
+官方仓库、工作区是否干净）与四语言各自的产出计数——控制台输出不随仓库分发，
+这份文件是产出数据出处的记录。它不在 `tests/oracle.spec.ts` 的哈希钉死
+范围内。
 
-⚠️ **KC3 clone 里必须有 `LICENSE` 文件**：这批译名数据以 MIT 协议分发，
-MIT 要求版权声明与许可声明随数据一起保留。脚本会在读取任何 KC3 数据**之前**
-检查 `<kc3 clone>/LICENSE` 是否存在，缺了就直接非零退出、不产出数据——不能
-让「数据同步成功」和「许可证留存条款被满足」这两件事脱钩。校验通过后，
-脚本用这份 `LICENSE` 的原文生成 [`THIRD_PARTY_NOTICES`](./THIRD_PARTY_NOTICES)
-（仓库根目录）与 `public/data/i18n/THIRD_PARTY_NOTICES`（内容相同）两份文件，
-记录项目名、来源 URL、本次同步用的 commit，以及 MIT 协议全文（含版权行）：
-根目录那份供随源码走读的人查看，紧挨着本仓库自己的 GPLv3 `LICENSE`；
+这批译名数据以 MIT 协议分发，MIT 要求版权声明与许可声明随数据一起保留。
+许可证正文写死在 `scripts/sync-i18n.mjs` 的 `KC3_LICENSE_TEXT` 常量里——
+脚本不再从 `--kc3` 指向的 clone 读取或校验 `LICENSE` 文件；KC3 如果未来
+更新了许可证文本，需要手动核对新文本后更新这个常量。脚本用这个常量生成
+[`THIRD_PARTY_NOTICES`](./THIRD_PARTY_NOTICES)（仓库根目录）与
+`public/data/i18n/THIRD_PARTY_NOTICES`（内容相同）两份文件，记录项目名、
+来源 URL、本次同步用的 commit，以及 MIT 协议全文（含版权行）：根目录那份
+供随源码走读的人查看，紧挨着本仓库自己的 GPLv3 `LICENSE`；
 `public/data/i18n/` 那份随生产构建原样进 `dist/data/i18n/`，保证单独拿走这批
 JSON 数据的人也能看到它的许可证——这两份文件都由脚本生成、随每次同步覆盖，
-不要手改。`scripts/__tests__/thirdPartyNotice.spec.ts` 钉住它们的 commit
-与 `_meta.json` 保持一致，防止两者未来因为忘记同步更新而各说各话。
+不要手改。`scripts/__tests__/thirdPartyNotice.spec.ts` 钉住这两份文件逐
+字节相同、都带 MIT 版权行与来源 URL，防止两处未来因为忘记同步更新而各说
+各话——不再钉它们与 `_meta.json` 记录的 commit 是否一致（commit 现在只是
+记录性质的值，不再被核验，见上文）。
 
 ⚠️ 更新 `public/data/start2.json` 后必须重跑本脚本 —— 舰船与装备的译名表是
 按当前那份 start2 的 ID 集合生成的。
