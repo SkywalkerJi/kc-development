@@ -49,7 +49,9 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
    * DevelopmentView.vue 的 availablePools（selectablePools 的包装）。改成
    * 公开字段后三处全部确认不再需要，已经删掉，`pnpm type-check` 通过。
    */
-  descriptor: PoolDescriptor = { stypes: [], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [] }
+  descriptor: PoolDescriptor = {
+    stypes: [], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [],
+  }
 
   init(ctypeMap: Record<string, string>, getIDs: GetIDs, shipList: Record<number, ShipLike>): void {
     // 描述结构：只收集「有哪些条件」，不决定怎么显示。shipIds 在这里就要
@@ -62,6 +64,13 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
         return Number.isNaN(n) ? t : n
       }),
       shipNames: [...(this.舰名 ?? [])],
+      // 逐个舰名单独精确查一次（exact=true）：与下面「舰ID 展开」那一段的
+      // exact=false 模糊调用是**两次不同目的的调用**，不能合并、也不能
+      // 互相替代——那一段返回的是整条同型舰链，答不出"这个名字具体是哪
+      // 一艘"；这里要的正是这件事，只服务展示层的名字→译名映射，不影响
+      // 下面 舰ID 的任何计算。查不到就是 null，由 formatPoolDescriptor
+      // 回退渲染原始日文舰名（详见 PoolDescriptor.shipNameIds 的说明）。
+      shipNameIds: (this.舰名 ?? []).map((name) => getIDs([name], true)[0] ?? null),
       excludeShipIds: [...(this.不包含舰ID ?? [])],
       shipIds: [...(this.舰ID ?? [])],
       minResources: this.最低资源 ? [...this.最低资源] : undefined,

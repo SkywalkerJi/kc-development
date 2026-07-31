@@ -243,7 +243,7 @@ import FlagshipSearch from '@/components/FlagshipSearch.vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
-import { t, t as $t, equipName, poolName, shipName, ctypeName, stypeName } from '@/i18n'
+import { t, t as $t, equipName, poolName, shipName, ctypeName, stypeName, descWordSep } from '@/i18n'
 import { formatPoolDescriptor } from '@/core/poolDescriptor'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
@@ -268,7 +268,7 @@ const pools = () => developmentStore.developmentPools
 // 是 MsgKey 的子集，而 i18n 的 t 签名是 (key: MsgKey) => string——参数类型
 // 是逆变位置，「认所有 MsgKey」的函数天然能当「只认 DescMsgKey 子集」的函数
 // 用，不需要再转手一次包一层断言。
-const descriptorCtx = { t, shipName, ctypeName, stypeName }
+const descriptorCtx = { t, shipName, ctypeName, stypeName, wordSep: descWordSep }
 
 /** 下拉框里池名后面括号里的筛选条件描述，见 core/poolDescriptor.ts。 */
 function describePool(pool: DevelopmentPoolClass): string {

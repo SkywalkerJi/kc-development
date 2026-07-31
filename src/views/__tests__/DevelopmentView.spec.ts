@@ -647,7 +647,9 @@ describe('DevelopmentView — i18n 接线（Task 7）', () => {
     // createPools 刻意不跑 init()（那需要 ctypeMap/shipList，是 developmentPool.spec.ts
     // 的范围），这里直接给 descriptor 赋值，只测 View 侧「取 descriptor → 拼句 →
     // 翻译」这一段接线。
-    pools[0].descriptor = { stypes: ['DD'], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [] }
+    pools[0].descriptor = {
+      stypes: ['DD'], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [],
+    }
     developmentStore.developmentPools = pools
     developmentStore.existPool = ['测试池']
     developmentStore.filterButtonList = {}

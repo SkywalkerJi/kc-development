@@ -132,6 +132,23 @@ export function ctypeName(id: number): string {
 }
 
 /**
+ * 池描述（core/poolDescriptor.ts 的 formatPoolDescriptor）拼「标签 + 值」
+ * 或多个列表项时要不要插空格。
+ *
+ * CJK 三个语言词间无空格是正确排版（'不包含大和改二重' 正确，中间加空格
+ * 反而错），en 必须有空格分隔单词（'excluding Yamato' 不能写成
+ * 'excludingYamato'，改造前的缺陷正是这个）。今天只有 en 落在"要空格"
+ * 那一侧，没有写成"其余三个各自返回空串"的三条分支——不是漏写，等真的
+ * 出现第二个非 CJK 语言时再拆分支，现在拆没有任何用例能证明它有必要。
+ *
+ * core 层因此不需要认识"这是第几种语言"，只需要认识这一个布尔结果，
+ * 通过 DescriptorCtx.wordSep 参数注入，core 依旧不 import 本模块。
+ */
+export function descWordSep(): string {
+  return localeRef.value === 'en' ? ' ' : ''
+}
+
+/**
  * 开发池名。入参是中文原名（身份键）。
  *
  * 未命中（POOL_NAMES 里没有这个键）时回退的是**入参本身**（zh-Hans 原名），

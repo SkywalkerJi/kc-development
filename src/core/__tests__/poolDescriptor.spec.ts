@@ -8,23 +8,61 @@ const ctx = {
     'desc.minFuel': '最低油', 'desc.minAmmo': '最低弹',
     'desc.minSteel': '最低钢', 'desc.minBauxite': '最低铝',
   } as Record<string, string>)[k] ?? k,
-  shipName: (id: number) => ({ 1: '睦月', 2: '如月' } as Record<number, string>)[id] ?? '',
+  shipName: (id: number) => ({ 1: '睦月', 2: '如月', 3: '天津风' } as Record<number, string>)[id] ?? '',
   ctypeName: (id: number) => ({ 6: '金刚型' } as Record<number, string>)[id] ?? '',
   stypeName: (code: string) => ({ DD: '驱逐舰' } as Record<string, string>)[code] ?? code,
+  // 中文：词间不加空格，与改造前逐字节相同的行为，见文件末尾专门钉住
+  // 这条的用例。
+  wordSep: () => '',
 } as const
 
+// 英文风格的 ctx：wordSep 返回单个空格，用来钉住 Fix 2（标签/值粘接、
+// 列表分隔都要有空格）。刻意与上面的 ctx 共用除 wordSep 外的全部查表，
+// 只让分隔符这一个变量不同，这样任何一条用例失败都能确定是分隔符逻辑
+// 的问题，不是名称查表本身的问题。
+const enCtx = { ...ctx, wordSep: () => ' ' } as const
+
 const empty: PoolDescriptor = {
-  stypes: [], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [],
+  stypes: [], ctypes: [], shipNames: [], shipNameIds: [], excludeShipIds: [], shipIds: [],
 }
 
 describe('formatPoolDescriptor', () => {
   it('各段以逗号连接，顺序为 舰种 → 舰级 → 舰名 → 不包含 → 舰ID → 最低资源', () => {
     const d: PoolDescriptor = {
-      stypes: ['DD'], ctypes: [6], shipNames: ['天津風'],
+      stypes: ['DD'], ctypes: [6], shipNames: ['天津風'], shipNameIds: [3],
       excludeShipIds: [2], shipIds: [1], minResources: [30, 0, 0, 10],
     }
     expect(formatPoolDescriptor(d, ctx)).toBe(
-      '驱逐舰,金刚型,天津風,不包含如月(2),睦月(1),最低油30,最低铝10',
+      '驱逐舰,金刚型,天津风,不包含如月(2),睦月(1),最低油30,最低铝10',
+    )
+  })
+
+  it('shipNames 优先渲染 shipNameIds 查到的译名（Fix 1）：天津風 → 天津风，不再原样输出日文', () => {
+    const d = { ...empty, shipNames: ['天津風'], shipNameIds: [3] }
+    expect(formatPoolDescriptor(d, ctx)).toBe('天津风')
+  })
+
+  it('shipNameIds 该项为 null（精确匹配查不到）时，回退渲染 shipNames 原文——不是遗漏，是刻意兜底', () => {
+    const d = { ...empty, shipNames: ['未知舰名'], shipNameIds: [null] }
+    expect(formatPoolDescriptor(d, ctx)).toBe('未知舰名')
+  })
+
+  it('shipNameIds 该项有 ID 但 shipName() 查不到译名（空串）时，同样回退原文，不渲染空段', () => {
+    const d = { ...empty, shipNames: ['查无译名的舰'], shipNameIds: [999] }
+    expect(formatPoolDescriptor(d, ctx)).toBe('查无译名的舰')
+  })
+
+  it('wordSep 非空（英文语境）：标签与值之间、列表项之间都补上空格——钉住 Fix 2 的缺陷', () => {
+    const d: PoolDescriptor = {
+      stypes: ['DD'], ctypes: [], shipNames: [], shipNameIds: [],
+      excludeShipIds: [1, 2], shipIds: [], minResources: [30, 20, 10, 5],
+    }
+    // 改造前（wordSep 恒为空串）这里会拼成
+    // 'DD,excluding睦月(1),如月(2),min. fuel30min. ammo20...' 这种没有
+    // 分隔符的粘连——en.ts 的实际文案在别处测过，这里用 ctx 的桩文案，
+    // 只钉住"该有空格的地方有空格"这件事本身。
+    expect(formatPoolDescriptor(d, enCtx)).toBe(
+      '驱逐舰, 不包含 睦月(1), 如月(2), 最低油 30, 最低弹 20, 最低钢 10, 最低铝 5',
     )
   })
 
