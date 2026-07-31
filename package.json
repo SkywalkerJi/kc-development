@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sync-data": "node scripts/sync-data.mjs",
-    "sync-i18n": "node scripts/sync-i18n.mjs"
+    "sync-i18n": "node scripts/sync-i18n.mjs",
+    "verify-render": "pnpm build && node scripts/verify-render.mjs"
   },
   "dependencies": {
     "pinia": "^3.0.1",
