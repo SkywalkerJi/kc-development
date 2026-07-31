@@ -15,6 +15,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import FlagshipSearch from '../FlagshipSearch.vue'
 import { useStart2Store } from '@/stores/start2Store'
 import { useDevelopmentStore } from '@/stores/developmentStore'
+import { createPools } from '@/core/developmentPool'
 import { __resetI18nForTest, setLocale } from '@/i18n'
 
 let app: App | null = null
@@ -79,5 +80,99 @@ describe('FlagshipSearch 的搜索维度', () => {
     } as unknown as Response)))
     await setLocale('en')
     expect((await type(mount(), 'Kongou')).join()).toContain('Kongou')
+  })
+
+  // 以下三条钉住 Fix 3：搜索关键字与三个匹配维度都要先经
+  // normalizeForSearch（NFKC + 大小写折叠 + 片假名→平假名）再比较，
+  // 缺一步都会让某种输入形态搜不到本该搜到的舰。
+  it('小写英文关键字也能命中大写开头的译名——大小写不敏感（Fix 3）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+    } as unknown as Response)))
+    await setLocale('en')
+    // 改造前 String.includes 是大小写敏感的，'kongou' 全小写找不到 'Kongou'。
+    expect((await type(mount(), 'kongou')).join()).toContain('Kongou')
+  })
+
+  it('全角拉丁字母关键字命中半角译名——NFKC 规范化（Fix 3）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+    } as unknown as Response)))
+    await setLocale('en')
+    // 'Ｋｏｎｇｏｕ' 是全角拉丁字母（U+FF21 起），改造前原样比较肯定找不到
+    // 半角的 'Kongou'；NFKC 把全角折成半角后应该等价于上一条用例。
+    expect((await type(mount(), 'Ｋｏｎｇｏｕ')).join()).toContain('Kongou')
+  })
+
+  it('片假名关键字命中平假名读音——片假名→平假名折叠（Fix 3）', async () => {
+    // 长门的 yomi 是平假名'ながと'；ナガト是它的片假名形态，游戏内、
+    // 输入法候选、维基百科条目都常见这种写法，改造前逐字节比较搜不到。
+    expect((await type(mount(), 'ナガト')).join()).toContain('長門')
+  })
+})
+
+describe('FlagshipSearch：选中态跟随语言切换（Fix 4）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    __resetI18nForTest()
+    const s = useStart2Store()
+    s.shipList = { 78: { id: 78, name: '金剛', yomi: 'こんごう' } } as never
+    // choose() 要 developmentStore.setFlagship(78) 返回非 null 命中，
+    // 需要一个 开发池ID > 0 且 舰ID集 含 78 的池；createPools 不跑 init()
+    // 也能直接从给定的 舰ID 建出 舰ID集，够用（同 DevelopmentView.spec.ts
+    // 的既有做法）。
+    useDevelopmentStore().developmentPools = createPools([
+      { 开发池名称: '金刚池', 开发池ID: 1, 舰ID: [78], 出货率: {} },
+    ])
+  })
+  afterEach(() => { app?.unmount(); host?.remove(); app = null; host = null; vi.unstubAllGlobals() })
+
+  it('选中舰船后切换语言：输入框显示值跟着变成新语言的译名，不停留在选中那一刻的旧字符串', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+    } as unknown as Response)))
+    await setLocale('en')
+
+    const el = mount()
+    await type(el, '金剛')
+    const li = el.querySelector('.suggestions li') as HTMLLIElement
+    li.click()
+    await nextTick()
+    const input = el.querySelector('input') as HTMLInputElement
+    // 断言真实 DOM 的 input.value，不是组件内部的 keyword ref——用户看到的
+    // 是前者，若 v-model 没把 computed 的新值真的 patch 进 DOM，断言 ref
+    // 会看不出来。
+    expect(input.value).toBe('Kongou')
+
+    // 切到 zh-Hans，且给 78 一个与 'Kongou' 明显不同的译名，制造"若还是
+    // 旧值就会一眼看出不对"的落差——同一个字符串在两种语言下巧合相同
+    // 不能证明「跟着语言变」这件事。
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => (String(url).includes('ships.json') ? { 78: '金刚' } : {}),
+    } as unknown as Response)))
+    await setLocale('zh-Hans')
+    await nextTick()
+    expect(input.value).toBe('金刚')
+  })
+
+  it('手动输入舰名后切换语言：输入框保留用户打的字，不会被选中态的旧逻辑覆盖', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true, status: 200, json: async () => ({}),
+    } as unknown as Response)))
+
+    const el = mount()
+    await type(el, '長門')
+    const input = el.querySelector('input') as HTMLInputElement
+    expect(input.value).toBe('長門')
+
+    // 从未点过任何建议项，selectedShipId 应该始终是 null——语言切换不该
+    // 触碰这个输入框。
+    await setLocale('en')
+    await nextTick()
+    expect(input.value).toBe('長門')
   })
 })

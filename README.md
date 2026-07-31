@@ -87,7 +87,11 @@ CDP 即可。
 - 在 1400px（宽）与 1024px（窄）两档视口下，分别抓取：秘书舰下拉框选项
   文案、两张表格的表头、装备按钮文案样本、`document.title`/`<html lang>`、
   `body` 实际解析到的 `font-family`，以及「秘书舰类型」标签/其
-  `<select>`/秘书舰搜索 `<input>`/建议列表 `<ul>` 四者的 `getBoundingClientRect`。
+  `<select>`/秘书舰搜索 `<input>`/建议列表 `<ul>` 四者的 `getBoundingClientRect`；
+  外加两个标签（「秘书舰类型」「秘书舰」）在不受 `--form-label-width` 约束时
+  的 shrink-to-fit 真实宽度与字号（`labelIntrinsic`）——这是 `base.css` 里
+  三个 `:lang()` 覆盖值的取值依据，此前按字符数估、标注过「pending
+  measurement」，现在直接测。
 
 **⚠️ 故意不接入 `pnpm test`**：它依赖本机装有 `/usr/bin/google-chrome`，
 没装 Chrome 的机器上 `pnpm test` 不该因此变红——这是一道独立于单测套件、

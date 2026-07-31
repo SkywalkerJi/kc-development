@@ -22,7 +22,10 @@
  * 覆盖范围见 README「渲染核验」一节；简言之：四语言 × 两档视口的秘书舰
  * 下拉框选项、公式表表头、装备按钮样本、document.title/<html lang>、
  * body 实际解析到的 font-family，以及「秘书舰类型」标签/下拉框/秘书舰
- * 搜索输入框/建议列表 ul 的 getBoundingClientRect。
+ * 搜索输入框/建议列表 ul 的 getBoundingClientRect；外加两个标签在不受
+ * --form-label-width 约束时的 shrink-to-fit 真实宽度与字号
+ * （labelIntrinsic，供 base.css 的 --form-label-width 取值使用，
+ * 见 captureSnapshot 里的说明）。
  *
  * ⚠️ 故意不接入 `pnpm test`：它依赖本机装有 /usr/bin/google-chrome，
  * 没有 Chrome 的机器上跑 `pnpm test` 不该因此变红——这是一道独立的、
@@ -337,6 +340,33 @@ async function captureSnapshot(cdp) {
       return { x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, left: r.left, right: r.right, bottom: r.bottom };
     };
     const texts = (sel) => Array.from(document.querySelectorAll(sel)).map((el) => el.textContent.trim());
+    // Fix 5 专用：--form-label-width 三个 :lang() 覆盖值此前是按字符数估的
+    // （base.css 里明确写着"pending measurement"），现在有真实浏览器了，
+    // 量真的。rect(sel) 量出来的宽度对这两个 label 没用——它们自己就有
+    // width: var(--form-label-width) 这条样式规则，读到的永远是这个变量
+    // 解析出的值，不是文字实际需要的宽度（循环论证）。这里临时把 inline
+    // style 的 width 盖成 auto（inline style 优先级天然高于样式表规则，
+    // 不需要 !important），量 shrink-to-fit 之后的真实内容宽度，再把
+    // inline style 清空复原——这两个 label 都没有 padding/border（见
+    // FlagshipSearch.vue / DevelopmentView.vue 的 scoped 样式），量出来的
+    // 就是纯文字宽度，不含盒模型噪音。同时带上 fontSize：两个 label 是否
+    // 共享同一套字号是"能不能用同一个 em 值"这个假设成不成立的前提，
+    // base.css 里 --form-label-width 那条 ⚠️ 注释警告过 em 在不同元素上
+    // 可能解析到不同字号，这里直接测，不再靠假设。
+    //
+    // （这几行注释同样不能用反引号——原因见下面 boxes 字段里那条已有的
+    // 警告，本函数整体是一个反引号模板字符串，注释内容原样发给浏览器
+    // 执行，反引号会被当成字符串边界。）
+    const intrinsicWidth = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const prevWidth = el.style.width;
+      el.style.width = 'auto';
+      const width = el.getBoundingClientRect().width;
+      const fontSize = getComputedStyle(el).fontSize;
+      el.style.width = prevWidth;
+      return { width, fontSize };
+    };
     return {
       secretaryOptions: texts('#poolSelect option'),
       equipmentListHeaders: texts('.equipment-list thead th'),
@@ -371,6 +401,10 @@ async function captureSnapshot(cdp) {
         //   心算、心算还容易算错（这条正是上一轮报告审阅时被指出的错误）。
         flagshipLabel: rect('.flagship-search label'),
         leftPanel: rect('.left-panel'),
+      },
+      labelIntrinsic: {
+        secretaryType: intrinsicWidth('.secretary-select label'),
+        flagship: intrinsicWidth('.flagship-search label'),
       },
     };
   })()`)
