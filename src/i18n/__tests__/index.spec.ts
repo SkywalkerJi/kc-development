@@ -56,10 +56,15 @@ describe('i18n 门面', () => {
   })
 
   it('名称表里没有的 ID 仍回退日文原名，不显示空串', async () => {
+    // 表本身必须非空（Fix 4 之后 {} 会被 isValidNameTable 拒绝、setLocale
+    // 直接失败），但里面不含 id=1——这样才是在验证"切换真的成功了、只是
+    // 这一个 ID 没有译名，查表落空后按设计回退日文原名"，而不是
+    // "setLocale 干脆没成功，随便什么 locale 下缺表都会回退"这种假阳性。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 999: 'Unrelated' }, 'i18n/en/ships.json': { 999: 'Unrelated' }, 'i18n/en/ctype.json': { 999: 'Unrelated' },
     }))
-    await setLocale('en')
+    const ok = await setLocale('en')
+    expect(ok).toBe(true)
     expect(equipName(1)).toBe('12cm単装砲')
   })
 
@@ -168,10 +173,13 @@ describe('i18n 门面', () => {
   it('initLocale 加载失败 → 错误可见 → 重试 → 成功后错误清空（且确认重试真的重新发起了请求）', async () => {
     vi.stubGlobal('navigator', { languages: ['en'], language: 'en' })
     let shouldFail = true
+    // "成功" 分支的内容与这条用例无关（只关心失败/重试的状态机），但
+    // Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable
+    // 拒绝，"成功" 分支会变回失败，下面 expect(ok).toBe(true) 就假不了。
     const fetchMock = vi.fn(async () =>
       shouldFail
         ? ({ ok: false, status: 500 } as unknown as Response)
-        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response))
+        : ({ ok: true, status: 200, json: async () => ({ 1: 'x' }) } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
 
     await initLocale()
@@ -220,18 +228,25 @@ describe('i18n 门面', () => {
     })
 
     it('非 zh-Hans 走加载进来的 ctype 表', async () => {
+      // items/ships 内容与这条用例无关（只关心 ctype），但 Fix 4 之后
+      // 真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝。
       vi.stubGlobal('fetch', mockFetchOk({
-        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': { 6: 'Kongou Class' },
+        'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 6: 'Kongou Class' },
       }))
-      await setLocale('en')
+      const ok = await setLocale('en')
+      expect(ok).toBe(true)
       expect(ctypeName(6)).toBe('Kongou Class')
     })
 
     it('非 zh-Hans 未命中返回空串', async () => {
+      // ctype 表非空但不含 999——这样才是在验证"表加载成功、只是没有这个
+      // ID"，而不是"setLocale 干脆没成功"这种假阳性（Fix 4 之后 {} 会被
+      // isValidNameTable 拒绝，setLocale 会直接失败）。
       vi.stubGlobal('fetch', mockFetchOk({
-        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+        'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 6: 'Kongou Class' },
       }))
-      await setLocale('en')
+      const ok = await setLocale('en')
+      expect(ok).toBe(true)
       expect(ctypeName(999)).toBe('')
     })
   })
@@ -245,10 +260,12 @@ describe('i18n 门面', () => {
     let releaseFetch!: () => void
     const gate = new Promise<void>((resolve) => { releaseFetch = resolve })
     const calls: string[] = []
+    // 内容与这条用例无关（只关心并发请求次数与返回值），但 Fix 4 之后
+    // 真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝。
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       calls.push(String(url))
       await gate
-      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response
+      return { ok: true, status: 200, json: async () => ({ 1: 'x' }) } as unknown as Response
     }))
 
     const p1 = setLocale('en')
@@ -272,10 +289,14 @@ describe('i18n 门面', () => {
     })
 
     it('en 走 STYPE_NAMES 表，保留缩写本身', async () => {
+      // 内容与这条用例无关（stypeName 走的是 STYPE_NAMES 常量表，不读这三
+      // 张名称表），但 Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会
+      // 被 isValidNameTable 拒绝，setLocale 会失败、locale 根本切不到 en。
       vi.stubGlobal('fetch', mockFetchOk({
-        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+        'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 1: 'x' },
       }))
-      await setLocale('en')
+      const ok = await setLocale('en')
+      expect(ok).toBe(true)
       expect(stypeName('DD')).toBe('DD')
     })
 
@@ -285,8 +306,13 @@ describe('i18n 门面', () => {
 
     describe('ja：从 api_mst_stype 派生（含 Fix 2 的 FBB 覆盖）', () => {
       async function toJa() {
-        vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': {} }))
-        await setLocale('ja')
+        // 内容与这组用例无关（stypeName 的 ja 分支读的是 api_mst_stype，
+        // 不读 ctype 表），但 ja 仍然会真实发起 ctype.json 请求（见
+        // load.ts 的 wantCtype），Fix 4 之后 {} 会被 isValidNameTable
+        // 拒绝，setLocale 会失败、locale 根本切不到 ja。
+        vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': { 1: 'x' } }))
+        const ok = await setLocale('ja')
+        if (!ok) throw new Error('setLocale(ja) 应当成功——测试 fixture 本身坏了')
       }
 
       it('正常代码：查 ShipType 拿 stype 序数，再查 api_mst_stype 拿日文名', async () => {
@@ -338,8 +364,12 @@ describe('i18n 门面', () => {
   // 探测结果——见 i18n/index.ts 里 setLocale/initLocale 的 persist 参数。
   describe('localStorage 持久化：只在显式切换时写，探测驱动的切换不写', () => {
     it('显式 setLocale 会写 localStorage', async () => {
+      // 内容本身与这条用例无关（只关心 localStorage 有没有被写），但 Fix 4
+      // 之后真实发起的请求不能再用 {} 糊弄——空表现在会被 isValidNameTable
+      // 拒绝，setLocale 会失败、根本不会走到写 localStorage 那一步。随便给
+      // 一条非空内容，只是为了让 setLocale 本身能成功。
       vi.stubGlobal('fetch', mockFetchOk({
-        'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+        'i18n/en/items.json': { 1: 'X' }, 'i18n/en/ships.json': { 1: 'X' }, 'i18n/en/ctype.json': { 1: 'X' },
       }))
       await setLocale('en')
       expect(localStorage.getItem('kc-development.locale')).toBe('en')
@@ -349,7 +379,8 @@ describe('i18n 门面', () => {
       // 探测到 ja（而不是默认的 zh-Hans），确保这次切换确实执行了、
       // 不是被"locale 没变"的短路跳过——那样的话"没写"就什么也证明不了。
       vi.stubGlobal('navigator', { languages: ['ja'], language: 'ja' })
-      vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': {} }))
+      // 同上一条用例：内容与这条用例无关，只是 {} 现在会被拒绝，换成非空。
+      vi.stubGlobal('fetch', mockFetchOk({ 'i18n/ja/ctype.json': { 1: 'X' } }))
       await initLocale()
       expect(currentLocale.value).toBe('ja')
       expect(localStorage.getItem('kc-development.locale')).toBeNull()
@@ -359,8 +390,9 @@ describe('i18n 门面', () => {
   // Fix 10：index.html 的静态 <title> 只覆盖首帧；语言切换后标签页标题也要
   // 跟着变，否则 en/ja/zh-Hant 用户会一直看到 zh-Hans 的标题。
   it('切换语言后 document.title 跟着变成对应语言的 title.app', async () => {
+    // 同上：内容与这条用例无关，{} 现在会被 isValidNameTable 拒绝，换成非空。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 1: 'X' }, 'i18n/en/ships.json': { 1: 'X' }, 'i18n/en/ctype.json': { 1: 'X' },
     }))
     await setLocale('en')
     expect(document.title).toBe(t('title.app'))

@@ -28,6 +28,26 @@ const NUMERIC_EQUIP_FIELDS = [
 
 const VALID_POOL_IDS = new Set([-2, -1, 1, 2, 3])
 
+/**
+ * 开发池（public/data/DevelopmentPool.json 的 舰种 字段）实际引用到的 20 个
+ * stype 代码，换算成对应的数值 api_id（对照 src/core/types.ts 的 ShipType
+ * 枚举）。这里必须硬编码复刻这张表，不能直接 import ShipType：本文件是纯
+ * JS，被 scripts/sync-data.mjs 用 node 不经构建直接执行（见本文件顶部
+ * 注释），types.ts 是需要编译的 TS 源码。
+ *
+ * ShipType 枚举一共 23 个值，NULL(0)、超弩級戦艦(12)、敌AO(15) 这三个不在
+ * 这份必需集合内——开发池的 舰种 字段从未引用过这三个代码（用
+ * `DevelopmentPool.json` 里出现过的全部 舰种 取值核对过），要求 stype 表
+ * 覆盖它们只会让"这台机器上的 start2.json 恰好没有这三种非玩家可开发
+ * 舰型对应的 stype 记录"这种正常波动被拒收，不是这里要拦的畸形输入。
+ */
+const REQUIRED_STYPE_IDS = new Map([
+  [1, 'DE'], [2, 'DD'], [3, 'CL'], [4, 'CLT'], [5, 'CA'], [6, 'CAV'],
+  [7, 'CVL'], [8, 'FBB'], [9, 'BB'], [10, 'BBV'], [11, 'CV'], [13, 'SS'],
+  [14, 'SSV'], [16, 'AV'], [17, 'LHA'], [18, 'CVB'], [19, 'AR'], [20, 'AS'],
+  [21, 'CT'], [22, 'AO'],
+])
+
 function isPlainObject(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -87,8 +107,13 @@ function isNumericArrayOfLength(v, len) {
  *    - api_type 不是数组、长度不是 5、或含非数值元素
  *    - api_broken 不是数组、长度不是 4、或含非数值元素
  *    - api_distance、api_cost：可选，存在时必须是有限数值
- * 5. api_mst_stype 的每一项：api_id 缺失/不是数值，api_equip_type 缺失/不是对象，
- *    api_name 缺失/不是字符串（i18n 的 stypeName() ja 分支读它，见上面的 ⚠️）
+ * 5. api_mst_stype 的每一项：api_id 缺失、不是正整数、或重复，api_equip_type
+ *    缺失/不是对象，api_name 缺失、不是字符串、或是空字符串（i18n 的
+ *    stypeName() ja 分支读它，见上面的 ⚠️——空字符串与缺失是同一种故障：
+ *    both 都会让这个舰种在 ja 下没有可用的日文名）。整张表还必须覆盖
+ *    REQUIRED_STYPE_IDS 里列的 20 个 id——只要求"非空数组"不够，一条
+ *    记录的表（比如只剩 DD）一样能通过"非空"，但绝大多数舰种在 ja 下仍然
+ *    会查不到名字，与空数组是同一类故障、只是没那么彻底。
  *
  * 边界：不做的事——不校验 stype/ctype 的取值是否在已知舰种范围内、
  * 不校验装备属性数值是否为非负数（有些参考实现里可能存在负值修正项，
@@ -191,15 +216,35 @@ export function validateStart2Payload(json) {
     if (item.api_cost !== undefined && !isFiniteNumber(item.api_cost)) errors.push(`${tag} api_cost 类型不对`)
   })
 
+  const seenStypeIds = new Set()
   json.api_mst_stype.forEach((item, idx) => {
     const label = `api_mst_stype[${idx}]`
     if (!isPlainObject(item)) { errors.push(`${label} 不是对象`); return }
-    if (!isFiniteNumber(item.api_id)) errors.push(`${label} 缺少 api_id`)
-    if (!isPlainObject(item.api_equip_type)) errors.push(`${label} 缺少 api_equip_type`)
+
+    const id = item.api_id
+    if (!isPositiveInteger(id)) {
+      errors.push(`${label} 缺少合法的 api_id（须为正整数，实际为 ${JSON.stringify(id)}）`)
+    } else if (seenStypeIds.has(id)) {
+      errors.push(`${label} api_id=${id} 与其他记录重复`)
+    } else {
+      seenStypeIds.add(id)
+    }
+
+    const tag = isPositiveInteger(id) ? `api_id=${id}` : label
+    if (!isPlainObject(item.api_equip_type)) errors.push(`${tag} 缺少 api_equip_type`)
     // api_name 是 i18n 的 stypeName() ja 分支唯一的日文舰种名来源（见本
-    // 函数顶部 JSDoc 的 ⚠️），从"未校验字段"提升为必须存在的字符串。
-    if (typeof item.api_name !== 'string') errors.push(`${label} 缺少 api_name`)
+    // 函数顶部 JSDoc 的 ⚠️），从"未校验字段"提升为必须存在、非空的字符串。
+    if (typeof item.api_name !== 'string' || item.api_name === '') {
+      errors.push(`${tag} 缺少 api_name（或为空字符串）`)
+    }
   })
+
+  const missingStypeIds = [...REQUIRED_STYPE_IDS.keys()].filter((id) => !seenStypeIds.has(id))
+  if (missingStypeIds.length) {
+    errors.push(
+      `api_mst_stype 缺少开发池实际引用到的舰种：${missingStypeIds.map((id) => `${id}(${REQUIRED_STYPE_IDS.get(id)})`).join(', ')}`,
+    )
+  }
 
   return errors.length === 0 ? { ok: true, errors: [] } : { ok: false, errors }
 }

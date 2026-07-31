@@ -687,10 +687,13 @@ describe('DevelopmentView — i18n 接线（Task 7）', () => {
     vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // ships/ctype 内容与这条用例无关（只关心装备名/池名/秘书舰列），但
+      // Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表现在会被
+      // isValidNameTable 拒绝，setLocale 会失败。随便给一条非空内容。
       const table: Record<string, unknown> = {
         'i18n/en/items.json': { 100: 'Equip A (EN)', 200: 'Equip B (EN)' },
-        'i18n/en/ships.json': {},
-        'i18n/en/ctype.json': {},
+        'i18n/en/ships.json': { 1: 'Unrelated' },
+        'i18n/en/ctype.json': { 1: 'Unrelated' },
       }
       const key = Object.keys(table).find((k) => String(url).includes(k))
       if (!key) throw new Error(`未预期的请求: ${url}`)
@@ -745,9 +748,12 @@ describe('DevelopmentView — i18n 接线（Task 7）', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       // zh-Hans 不请求 ctype.json（简体舰级名走 developmentStore.ctypeMap，
       // 见 i18n/names/load.ts 的 wantCtype 判断），所以这里只需要两个文件。
+      // 内容本身与这条用例无关（只关心表头/池名，不关心装备/舰船译名），
+      // 但 Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会被
+      // isValidNameTable 拒绝，setLocale 会失败。
       const table: Record<string, unknown> = {
-        'i18n/zh-Hans/items.json': {},
-        'i18n/zh-Hans/ships.json': {},
+        'i18n/zh-Hans/items.json': { 1: 'x' },
+        'i18n/zh-Hans/ships.json': { 1: 'x' },
       }
       const key = Object.keys(table).find((k) => String(url).includes(k))
       if (!key) throw new Error(`未预期的请求: ${url}`)

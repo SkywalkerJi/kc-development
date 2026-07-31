@@ -61,7 +61,8 @@ describe('FlagshipSearch 的搜索维度', () => {
   it('简体输入在 zh-Hans 下能命中 —— 这正是改造前搜不到的场景', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: '金刚', 85: '长门' } : {}),
+      // items/ctype 内容与这条用例无关，见上面同类用例的注释。
+      json: async () => (String(url).includes('ships.json') ? { 78: '金刚', 85: '长门' } : { 1: 'x' }),
     } as unknown as Response)))
     // 默认就是 zh-Hans，但名称表要真的加载进来才有译名维度；
     // 先切走再切回是让 setLocale 真正跑一次加载
@@ -76,7 +77,10 @@ describe('FlagshipSearch 的搜索维度', () => {
   it('译名维度随语言切换而变：英文下输入 Kongou 能命中', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+      // items/ctype 内容与这些用例无关（只关心 ships 译名），但 Fix 4
+      // 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable
+      // 拒绝，setLocale 会失败。随便给一条非空内容。
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : { 1: 'x' }),
     } as unknown as Response)))
     await setLocale('en')
     expect((await type(mount(), 'Kongou')).join()).toContain('Kongou')
@@ -88,7 +92,10 @@ describe('FlagshipSearch 的搜索维度', () => {
   it('小写英文关键字也能命中大写开头的译名——大小写不敏感（Fix 3）', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+      // items/ctype 内容与这些用例无关（只关心 ships 译名），但 Fix 4
+      // 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable
+      // 拒绝，setLocale 会失败。随便给一条非空内容。
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : { 1: 'x' }),
     } as unknown as Response)))
     await setLocale('en')
     // 改造前 String.includes 是大小写敏感的，'kongou' 全小写找不到 'Kongou'。
@@ -98,7 +105,10 @@ describe('FlagshipSearch 的搜索维度', () => {
   it('全角拉丁字母关键字命中半角译名——NFKC 规范化（Fix 3）', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+      // items/ctype 内容与这些用例无关（只关心 ships 译名），但 Fix 4
+      // 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable
+      // 拒绝，setLocale 会失败。随便给一条非空内容。
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : { 1: 'x' }),
     } as unknown as Response)))
     await setLocale('en')
     // 'Ｋｏｎｇｏｕ' 是全角拉丁字母（U+FF21 起），改造前原样比较肯定找不到
@@ -132,7 +142,10 @@ describe('FlagshipSearch：选中态跟随语言切换（Fix 4）', () => {
   it('选中舰船后切换语言：输入框显示值跟着变成新语言的译名，不停留在选中那一刻的旧字符串', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : {}),
+      // items/ctype 内容与这些用例无关（只关心 ships 译名），但 Fix 4
+      // 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable
+      // 拒绝，setLocale 会失败。随便给一条非空内容。
+      json: async () => (String(url).includes('ships.json') ? { 78: 'Kongou' } : { 1: 'x' }),
     } as unknown as Response)))
     await setLocale('en')
 
@@ -152,7 +165,8 @@ describe('FlagshipSearch：选中态跟随语言切换（Fix 4）', () => {
     // 不能证明「跟着语言变」这件事。
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       ok: true, status: 200,
-      json: async () => (String(url).includes('ships.json') ? { 78: '金刚' } : {}),
+      // items/ctype 内容与这条用例无关，见上面同类用例的注释。
+      json: async () => (String(url).includes('ships.json') ? { 78: '金刚' } : { 1: 'x' }),
     } as unknown as Response)))
     await setLocale('zh-Hans')
     await nextTick()
@@ -160,8 +174,10 @@ describe('FlagshipSearch：选中态跟随语言切换（Fix 4）', () => {
   })
 
   it('手动输入舰名后切换语言：输入框保留用户打的字，不会被选中态的旧逻辑覆盖', async () => {
+    // 内容与这条用例无关（只关心 setLocale 是否触碰了输入框），但 Fix 4
+    // 之后真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝。
     vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true, status: 200, json: async () => ({}),
+      ok: true, status: 200, json: async () => ({ 1: 'x' }),
     } as unknown as Response)))
 
     const el = mount()

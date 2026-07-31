@@ -43,11 +43,26 @@ function validStype(overrides: Record<string, unknown> = {}) {
   return { api_id: 1, api_name: '海防艦', api_equip_type: {}, ...overrides }
 }
 
-function validPayload(shipOverrides = {}, equipOverrides = {}) {
+// 开发池实际引用到的 20 个 stype 代码对应的数值 id（与 dataSchema.js 里
+// REQUIRED_STYPE_IDS 的键集合同一份清单——这里独立抄一份而不是 import
+// 它，是因为 REQUIRED_STYPE_IDS 本身没有具名导出（校验器的内部实现细节，
+// 不是这个模块对外承诺的接口），测试拿到的应该是"这 20 个 id 各自独立
+// 核对过、写死在测试里"的清单，不是"信任被测代码自己声称的清单"）。
+const REQUIRED_STYPE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16, 17, 18, 19, 20, 21, 22]
+
+/** 覆盖全部 20 个必需 stype id 的最小合法表——validPayload() 的默认值，
+ *  单条覆盖（如 validStype({ api_id: 99 })）想测别的畸形维度时，用
+ *  validPayload({}, {}, [...validStypeTable(), 那一条坏记录]) 之类的写法
+ *  单独替换 api_mst_stype，不需要每次都重新拼一遍 20 条。 */
+function validStypeTable() {
+  return REQUIRED_STYPE_IDS.map((id) => validStype({ api_id: id, api_name: `舰种${id}` }))
+}
+
+function validPayload(shipOverrides = {}, equipOverrides = {}, stypeOverride?: Record<string, unknown>[]) {
   return {
     api_mst_ship: [validShip(shipOverrides)],
     api_mst_slotitem: [validEquip(equipOverrides)],
-    api_mst_stype: [validStype()],
+    api_mst_stype: stypeOverride ?? validStypeTable(),
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }
@@ -109,7 +124,43 @@ describe('validateStart2Payload', () => {
     const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: undefined })] }
     const result = validateStart2Payload(bad)
     expect(result.ok).toBe(false)
-    expect(result.errors.join('\n')).toMatch(/api_mst_stype\[0\] 缺少 api_name/)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串）/)
+  })
+
+  it('api_mst_stype 记录 api_name 为空字符串时拒绝（不只是缺失这一种"没有名字"）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: '' })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串）/)
+  })
+
+  it.each([0, -1, 1.5, '1', null])('api_mst_stype 记录 api_id=%p（非正整数）时拒绝', (badId) => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_id: badId })] }
+    expect(validateStart2Payload(bad).ok).toBe(false)
+  })
+
+  it('两条 api_mst_stype 记录 api_id 相同时拒绝', () => {
+    const bad = {
+      ...validPayload(),
+      api_mst_stype: [...validStypeTable(), validStype({ api_id: 1, api_name: '重复的海防艦' })],
+    }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 与其他记录重复/)
+  })
+
+  it('api_mst_stype 表只有一条记录时拒绝——非空不等于覆盖了开发池实际引用到的舰种', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype()] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_mst_stype 缺少开发池实际引用到的舰种/)
+    // 缺的应该是除了 1(DE) 之外的全部 19 个，包含具体报出 2(DD)
+    expect(result.errors.join('\n')).toMatch(/2\(DD\)/)
+  })
+
+  it('api_mst_stype 表覆盖全部 20 个必需 id 时通过（validStypeTable() 本身就是这条用例的证明，这里显式断言一次）', () => {
+    const ok = { ...validPayload(), api_mst_stype: validStypeTable() }
+    expect(validateStart2Payload(ok).ok).toBe(true)
   })
 
   // 上游在 2026-07 把 api_mst_equip_ship 从「数组 + api_equip_type 数值数组」

@@ -71,8 +71,11 @@ describe('LocaleSwitcher', () => {
   })
 
   it('切换成功：不显示失败提示，select 停在目标语言，<html lang> 同步更新', async () => {
+    // 内容与这条用例无关（只关心切换成功后的 UI 状态），但 Fix 4 之后
+    // 真实发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝，
+    // setLocale 会失败。随便给一条非空内容。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 1: 'x' },
     }))
     mount()
     const select = container!.querySelector('select') as HTMLSelectElement
@@ -114,7 +117,10 @@ describe('LocaleSwitcher', () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       shouldFail
         ? ({ ok: false, status: 500 } as unknown as Response)
-        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response)))
+        // 内容与这些用例无关（只关心切换成功/失败后的横幅与 select 状态），
+        // 但 Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会被
+        // isValidNameTable 拒绝，"成功" 分支会变回失败。
+        : ({ ok: true, status: 200, json: async () => ({ 1: 'x' }) } as unknown as Response)))
     mount()
     const select = container!.querySelector('select') as HTMLSelectElement
 
@@ -149,7 +155,10 @@ describe('LocaleSwitcher', () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       shouldFail
         ? ({ ok: false, status: 500 } as unknown as Response)
-        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response)))
+        // 内容与这些用例无关（只关心切换成功/失败后的横幅与 select 状态），
+        // 但 Fix 4 之后真实发起的请求不能再用 {} 糊弄——空表会被
+        // isValidNameTable 拒绝，"成功" 分支会变回失败。
+        : ({ ok: true, status: 200, json: async () => ({ 1: 'x' }) } as unknown as Response)))
     mount()
     const select = container!.querySelector('select') as HTMLSelectElement
 

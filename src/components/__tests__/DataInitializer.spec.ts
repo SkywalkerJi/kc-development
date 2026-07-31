@@ -103,8 +103,11 @@ describe('DataInitializer', () => {
   it('挂载后切换语言：loadingMessageKey 与三条 loadingSteps 的译文都会更新 —— 证明存的是 key，不是挂载那一刻已求值的字符串', async () => {
     vi.spyOn(useStart2Store(), 'initializeData').mockReturnValue(new Promise(() => {}))
     useDevelopmentStore()
+    // 内容与这些用例无关（只关心切换成功后的文案），但 Fix 4 之后真实
+    // 发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝，
+    // setLocale 会失败。随便给一条非空内容。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 1: 'x' },
     }))
     mount()
     await flush()
@@ -139,8 +142,11 @@ describe('DataInitializer', () => {
   it('数据加载失败且异常不是 Error 实例：error.unknown 兜底文案挂载后切语言会重新翻译', async () => {
     vi.spyOn(useStart2Store(), 'initializeData').mockRejectedValue('boom')
     useDevelopmentStore()
+    // 内容与这些用例无关（只关心切换成功后的文案），但 Fix 4 之后真实
+    // 发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝，
+    // setLocale 会失败。随便给一条非空内容。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 1: 'x' },
     }))
 
     mount()
@@ -169,8 +175,11 @@ describe('DataInitializer', () => {
   it('开发池数据加载失败且无可用 message：error.poolLoadError 兜底文案挂载后切语言会重新翻译', async () => {
     vi.spyOn(useStart2Store(), 'initializeData').mockResolvedValue({ success: true, error: null })
     vi.spyOn(useDevelopmentStore(), 'initializeData').mockResolvedValue({ success: false, error: null })
+    // 内容与这些用例无关（只关心切换成功后的文案），但 Fix 4 之后真实
+    // 发起的请求不能再用 {} 糊弄——空表会被 isValidNameTable 拒绝，
+    // setLocale 会失败。随便给一条非空内容。
     vi.stubGlobal('fetch', mockFetchOk({
-      'i18n/en/items.json': {}, 'i18n/en/ships.json': {}, 'i18n/en/ctype.json': {},
+      'i18n/en/items.json': { 1: 'x' }, 'i18n/en/ships.json': { 1: 'x' }, 'i18n/en/ctype.json': { 1: 'x' },
     }))
 
     mount()

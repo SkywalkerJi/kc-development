@@ -13,15 +13,32 @@ function isCanonicalNumericKey(key: string): boolean {
 }
 
 /**
- * 校验一张名称表的形状：必须是普通对象（排除 `null`/数组/字符串/数字等
- * 其它合法 JSON 值），每个键是规范数值字符串，每个值是非空字符串。空对象
- * `{}`（零个键）视为合法——ja/zh-Hans 两处跳过请求时人为构造的空表、以及
- * 上游数据本身暂时没有任何条目的表，都要走这条路径而不是被当成畸形拒绝。
+ * 校验一张**真的发出过 HTTP 请求、拿到响应体**的名称表的形状：必须是普通
+ * 对象（排除 `null`/数组/字符串/数字等其它合法 JSON 值），每个键是规范
+ * 数值字符串，每个值是去掉首尾空白后非空的字符串，且**表本身不能是空
+ * 对象**——真的发起过的请求，响应体不该是零条目：那与"这份表暂时没有
+ * 任何译名"是同一种可观测结果，也是同一种故障（下面 fetchNameTable 那段
+ * 的 P1 分析同样适用），却会被 `setLocale` 当成成功，locale 切换生效、
+ * 但每一个名字都悄悄回退成日文——用户完全看不出"翻译功能坏了"和"这门
+ * 语言真的还没翻译"的区别。
+ *
+ * 「真的发出过请求」是这条校验的前提，不是可选项：ja 的 items/ships、
+ * zh-Hans 的 ctype 这三张表按设计就是空对象（ja 的日文名直接来自
+ * start2.json，复制一份到 items/ships.json 会造成第二个真值源；zh-Hans
+ * 的舰级名读 developmentStore 已加载的 ctypeMap，不读 i18n 目录下的
+ * ctype.json），下面 `loadNameTables` 对这三张表走的是
+ * `Promise.resolve({})`，**根本不调用 `fetchNameTable`/这个函数**——
+ * 空表是"跳过请求"这个决策本身产出的常量，不是这个函数校验之后放行的
+ * 结果，两者在代码路径上就是分开的，不存在"这个函数需要放行 {}
+ * 才能兼容那三张表"这回事。
  *
  * 具名导出（而不是只在本文件内用）是为了让
  * `src/i18n/names/__tests__/load.spec.ts` 能直接拿它跑一遍
  * `public/data/i18n/**\/*.json` 这几份真实产出——校验规则不能只在 mock
  * 数据上验证过，见该测试文件里"正式产出数据全部通过校验"那条用例的注释。
+ * 那条用例因此要跳过 ja 的 items/ships.json 与 zh-Hans 的 ctype.json——
+ * 它们是磁盘上确实存在的空对象文件，符合"按设计为空"，但不符合"经过这个
+ * 函数校验"的前提，这里也不是它们该被校验的地方。
  *
  * 【为什么需要这层校验（P1）】`fetchJson()` 只保证"HTTP 2xx 且响应体是
  * 合法 JSON"，不保证响应体符合这里的业务形状。一个恰好返回 HTTP 200、
@@ -41,8 +58,10 @@ function isCanonicalNumericKey(key: string): boolean {
  */
 export function isValidNameTable(value: unknown): value is Record<number, string> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  return Object.entries(value as Record<string, unknown>).every(
-    ([key, v]) => isCanonicalNumericKey(key) && typeof v === 'string' && v !== '',
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length === 0) return false
+  return entries.every(
+    ([key, v]) => isCanonicalNumericKey(key) && typeof v === 'string' && v.trim() !== '',
   )
 }
 
@@ -50,7 +69,7 @@ export function isValidNameTable(value: unknown): value is Record<number, string
 async function fetchNameTable(url: string): Promise<Record<number, string>> {
   const json = await fetchJson(url)
   if (!isValidNameTable(json)) {
-    throw new Error(`名称表格式不合法（须为「规范数值字符串 → 非空字符串」的普通对象）: ${url}`)
+    throw new Error(`名称表格式不合法（须为「规范数值字符串 → 非空字符串」、且非空的普通对象）: ${url}`)
   }
   return json
 }
@@ -64,9 +83,13 @@ async function fetchNameTable(url: string): Promise<Record<number, string>> {
  * - ja：items/ships 的产出是空对象，没必要发这两个请求；日文名回退 start2。
  * - zh-Hans：不请求 ctype，简体舰级名读 developmentStore 已加载的 ctypeMap。
  *
- * 跳过请求时人为构造的 `Promise.resolve({})` 不经过 `fetchNameTable`，
- * 但 `{}` 本身就是 `isValidNameTable` 会接受的合法值（见其注释），两条路径
- * 的返回值形状因此始终一致，调用方不需要区分"真的请求过"还是"跳过了"。
+ * 跳过请求时的 `Promise.resolve({})` 是这三个组合"按设计为空"这件事本身
+ * 的直接体现——常量、不经过 `fetchNameTable`/`isValidNameTable`，**不是**
+ * "反正 `{}` 会通过校验所以偷懒复用同一个值"：`isValidNameTable` 现在会
+ * 拒绝空对象（见其注释），两条路径因此在返回值形状上分道扬镳，调用方需要
+ * 也确实能区分"真的请求过、拿到的是有内容的表"与"跳过了、给一个已知为空的
+ * 占位值"——只是调用方（`equipName`/`shipName`/`ctypeName` 查表）不关心
+ * 这个区别，缺键统一回退 start2 原名，才显得两条路径"看起来一样"。
  */
 export async function loadNameTables(locale: Locale): Promise<NameTables> {
   const base = `${import.meta.env.BASE_URL}data/i18n/${locale}/`
