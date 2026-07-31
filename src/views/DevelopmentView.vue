@@ -259,11 +259,7 @@ import {
 const developmentStore = useDevelopmentStore()
 const start2Store = useStart2Store()
 
-// Pinia 的 setup store 经由 Vue 的 UnwrapRef 暴露 developmentPools 时，
-// 会把类里的 private 字段（DevelopmentPoolClass.text）从映射类型里丢掉，
-// 导致暴露出来的元素类型结构上不再是 DevelopmentPoolClass。
-// 运行时仍是 createPools() 生成的真实实例，这里只是让类型对齐事实。
-const pools = () => developmentStore.developmentPools as unknown as DevelopmentPoolClass[]
+const pools = () => developmentStore.developmentPools
 
 // 状态数据
 const selectedPool = ref<DevelopmentPoolClass | null>(null)

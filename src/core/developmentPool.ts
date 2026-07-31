@@ -1,5 +1,6 @@
 import type { DevelopmentPoolData } from './types'
 import { ShipType } from './types'
+import { type PoolDescriptor } from './poolDescriptor'
 
 interface ShipLike { name: string; stype: number; ctype: number }
 type GetIDs = (names: string[], exact: boolean) => number[]
@@ -29,40 +30,44 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
    * 任何新增的 舰ID 写入点都必须同步重建它。
    */
   舰ID集: Set<number> = new Set()
-  private text = ''
+  /**
+   * 筛选条件的结构化描述，供展示层格式化（见 core/poolDescriptor.ts）。
+   *
+   * 这里原本是 `private text: string`，在 init() 里就拼成一整句中文 ——
+   * 在数据加载那一刻就烤死成一种语言，没法多语言化。
+   *
+   * `shipIds` 存的是**未展开**的 舰ID（JSON 原文，或 createPools 给的空数组
+   * 默认值），不是下面四段逻辑展开后的 this.舰ID。这是刻意的：改造前的
+   * text 构建那一段在四段展开逻辑**之前**就跑完了，读到的正是原始值 ——
+   * 拿展开后的 舰ID 会让 ~60 个用 舰种/舰型/舰名 筛选的池在描述里把每一艘
+   * 展开出来的舰都列出来，那不是原有行为。
+   *
+   * 顺带解掉一个类型问题：private 字段会让 Pinia 的 UnwrapRef 在映射时把它
+   * 丢掉，暴露出来的元素类型结构上不再是 DevelopmentPoolClass。改造前 View
+   * 与 store 里一共有三处 `as unknown as DevelopmentPoolClass` 断言应付这个问题
+   * ——DevelopmentView.vue 的 pools()、developmentStore.ts 的 setFlagship、
+   * DevelopmentView.vue 的 availablePools（selectablePools 的包装）。改成公开
+   * 字段后，跑 pnpm type-check 逐个验证：前两处确认不再需要，已经删掉；
+   * 第三处本任务范围之外未动（Task 7 改模板时一并处理），仍留着同样的断言
+   * 和注释。
+   */
+  descriptor: PoolDescriptor = { stypes: [], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [] }
 
   init(ctypeMap: Record<string, string>, getIDs: GetIDs, shipList: Record<number, ShipLike>): void {
-    this.text = ''
-
-    if (this.舰种) for (const s of this.舰种) this.text += s + ','
-
-    if (this.舰型)
-      for (const t of this.舰型) {
+    // 描述结构：只收集「有哪些条件」，不决定怎么显示。shipIds 在这里就要
+    // 定型（原样快照 this.舰ID），不能等下面四段展开跑完再取，见字段处的
+    // 说明。
+    this.descriptor = {
+      stypes: [...(this.舰种 ?? [])],
+      ctypes: (this.舰型 ?? []).map((t) => {
         const n = Number(t)
-        if (!Number.isNaN(n)) {
-          if (ctypeMap[String(n)]) this.text += ctypeMap[String(n)] + ','
-        } else {
-          this.text += t + ','
-        }
-      }
-
-    if (this.舰名) for (const n of this.舰名) this.text += n + ','
-
-    if (this.不包含舰ID) {
-      this.text += '不包含'
-      for (const id of this.不包含舰ID)
-        if (shipList[id]) this.text += `${shipList[id].name}(${id}),`
+        return Number.isNaN(n) ? t : n
+      }),
+      shipNames: [...(this.舰名 ?? [])],
+      excludeShipIds: [...(this.不包含舰ID ?? [])],
+      shipIds: [...(this.舰ID ?? [])],
+      minResources: this.最低资源 ? [...this.最低资源] : undefined,
     }
-
-    if (this.舰ID) for (const id of this.舰ID) if (shipList[id]) this.text += `${shipList[id].name}(${id}),`
-
-    if (this.最低资源) {
-      const labels = ['最低油', '最低弹', '最低钢', '最低铝']
-      for (let i = 0; i < 4; i++)
-        if (this.最低资源[i] > 0) this.text += labels[i] + this.最低资源[i] + ','
-    }
-
-    this.text = this.text.length > 0 ? this.text.slice(0, -1) : '过滤条件有点问题'
 
     if (!this.舰ID) this.舰ID = []
 
@@ -107,8 +112,15 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
     this.舰ID集 = new Set(this.舰ID)
   }
 
+  /**
+   * 只返回池名，**不再拼描述**。
+   *
+   * 描述的唯一产出点是 core/poolDescriptor.ts 的 formatPoolDescriptor()。
+   * 这里若也拼一份，两者会各拼各的、慢慢分叉 —— 正是这次重构要消除的东西。
+   * 模板不再渲染 String(pool)，改为调用那个格式化函数。
+   */
   toString(): string {
-    return `${this.开发池名称}(${this.text})`
+    return this.开发池名称
   }
 }
 

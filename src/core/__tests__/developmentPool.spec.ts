@@ -42,18 +42,27 @@ describe('DevelopmentPoolClass.init', () => {
     expect(p.舰ID).toEqual([1, 2])
   })
 
-  it('无任何筛选条件时 toString 给出兜底文案', () => {
+  it('toString 只返回池名，不再拼描述（描述改由 formatPoolDescriptor 产出，见 poolDescriptor.spec.ts）', () => {
     const p = createPools([{ 开发池名称: 'X', 开发池ID: 1, 出货率: {} }])[0]
     p.init(ctypeMap, noopGetIDs, shipList)
-    expect(p.toString()).toBe('X(过滤条件有点问题)')
+    expect(p.toString()).toBe('X')
+    expect(p.descriptor).toEqual({
+      stypes: [], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [], minResources: undefined,
+    })
   })
 
-  it('toString 拼出筛选条件描述', () => {
+  it('descriptor.shipIds 是 舰种/舰型/舰名 展开前的原始 舰ID —— 与改造前 text 构建阶段读到的值一致（构建发生在四段展开逻辑之前）', () => {
     const p = createPools([
-      { 开发池名称: 'X', 开发池ID: 1, 舰种: ['BB'], 最低资源: [0, 0, 300, 0], 出货率: {} },
+      { 开发池名称: 'X', 开发池ID: 1, 舰ID: [1], 舰种: ['BB'], 最低资源: [0, 0, 300, 0], 出货率: {} },
     ])[0]
     p.init(ctypeMap, noopGetIDs, shipList)
-    expect(p.toString()).toBe('X(BB,最低钢300)')
+    // 展开后 舰ID 含 BB 命中的 1、2（见上面「刻意不去重」用例），但 descriptor.shipIds
+    // 必须只保留展开前就有的 [1]。
+    expect(p.舰ID).toEqual([1, 1, 2])
+    expect(p.descriptor).toEqual({
+      stypes: ['BB'], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [1], minResources: [0, 0, 300, 0],
+    })
+    expect(p.toString()).toBe('X')
   })
 
   // 以下三条覆盖上面用例的盲区：
