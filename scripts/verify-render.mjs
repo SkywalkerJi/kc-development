@@ -78,11 +78,13 @@ const DIST = join(ROOT, 'dist')
 const OUT_DIR = join(ROOT, '.superpowers', 'sdd-round2')
 const OUT_JSON = join(OUT_DIR, 'render-verification.json')
 
-// 与 vite.config.ts 的 `base: '/kc-development/'`（生产构建）+ 路由用
+// 与 vite.config.ts 的 `base: '/kc-development-tools/'`（生产构建）+ 路由用
 // createWebHashHistory 保持一致——这两处任何一处改了，这里也要跟着改，
 // 不从 vite.config.ts 动态读是因为那是个 TS 模块、这里是纯 Node 脚本，
 // 犯不上为一个字符串常量拉一次完整的 vite 配置解析。
-const BASE_PATH = '/kc-development/'
+// 这个值等于仓库名（Pages 项目页服务在 https://<域名>/<仓库名>/ 下），仓库
+// 改名时三处副本要一起改，第三处是 public/404.html 的 baseUrl。
+const BASE_PATH = '/kc-development-tools/'
 
 // 仅用于可控地复现"端口已被占用"这类失败场景——设了这个环境变量就把这个
 // 固定端口号传给 vite preview --strictPort（仍然带 --strictPort，端口真被

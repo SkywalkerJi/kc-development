@@ -7,7 +7,10 @@
   <script>
     // 获取当前URL路径
     const path = window.location.pathname;
-    const baseUrl = '/kc-development/';
+    // 必须与 vite.config.ts 的 base、scripts/verify-render.mjs 的 BASE_PATH
+    // 一致（三者都等于仓库名）。这个文件在 public/ 下、由 vite 原样拷贝，
+    // 读不到构建期常量，只能硬编码；仓库改名时三处要一起改。
+    const baseUrl = '/kc-development-tools/';
     
     // 如果路径以基础URL开头且不等于基础URL（不是根路径）
     if (path.startsWith(baseUrl) && path !== baseUrl && path !== baseUrl.slice(0, -1)) {
