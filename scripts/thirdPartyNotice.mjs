@@ -11,18 +11,26 @@
  */
 
 /**
- * @param {{ source: string, commit: string | null, licenseText: string }} args
+ * @param {{ source: string, commit: string, licenseText: string }} args
  *   source：KC3Kai/kc3-translations 的仓库 URL。
- *   commit：本次同步用的 KC3 clone 的 HEAD commit；解析不到时为 null
- *     （不是 git 仓库等情况，与 sync-i18n.mjs 里 `commit` 变量同一来源，
- *     不在这里重新计算）。
+ *   commit：本次同步用的 KC3 clone 的 HEAD commit。round4 Fix 4 之前这里
+ *     允许 null（"KC3 clone 不是 git 仓库"时的诚实占位），但那与
+ *     scripts/__tests__/thirdPartyNotice.spec.ts 里"commit 恒为真值"的
+ *     回归校验互相矛盾——两处对"commit 能不能缺席"给出了不同答案。round4
+ *     Fix 4 选择了后者：sync-i18n.mjs 现在把"能否解析出一个确切、且绑定到
+ *     正确仓库的 commit"提升成了同步能否继续的硬性前提（不是 git 仓库、或
+ *     解析到的是外层仓库而非 KC3 自己，都会在写任何文件之前直接拒绝），
+ *     调用到这个函数时 commit 已经保证是一个真实的字符串，这里不再需要、
+ *     也不应该再兼容 null——继续允许它会让这个函数看起来还支持一种
+ *     调用方永远不会再传入的状态，是本轮要清理掉的"注释/类型描述了代码
+ *     不再实现的状态"那类问题的一个具体例子。
  *   licenseText：KC3 clone 的 LICENSE 文件原文（已去除 BOM 与尾随空白），
  *     原样转录，不做任何改写——MIT 要求许可声明本身被保留，改写就不是
  *     "保留"了。
  * @returns {string} THIRD_PARTY_NOTICES 文件内容，末尾带一个换行符。
  */
 export function buildThirdPartyNotice({ source, commit, licenseText }) {
-  const commitLine = commit ? `Commit:  ${commit}` : 'Commit:  unknown（KC3 clone 不是 git 仓库，或解析 HEAD 失败）'
+  const commitLine = `Commit:  ${commit}`
   return [
     'Third-Party Notices',
     '====================',
