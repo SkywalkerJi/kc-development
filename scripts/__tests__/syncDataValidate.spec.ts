@@ -37,7 +37,9 @@ function validStart2() {
   return {
     api_mst_ship: [validShip()],
     api_mst_slotitem: [validEquip()],
-    api_mst_stype: [],
+    // 曾经允许为空，i18n 的 stypeName() ja 分支落地后它变成了 ja 舰种名的
+    // 唯一数据源，空数组不再合法（见 src/core/dataSchema.js 的 ⚠️ 注释）。
+    api_mst_stype: [{ api_id: 1, api_name: '海防艦', api_equip_type: {} }],
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }

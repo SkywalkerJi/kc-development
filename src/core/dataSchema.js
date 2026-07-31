@@ -50,10 +50,16 @@ function isNumericArrayOfLength(v, len) {
  * 覆盖的畸形输入类别：
  * 1. 顶层不是对象（null / 数组 / 字符串 / 数字等）
  * 2. 必需的顶层数组/对象字段缺失或类型不对：
- *    api_mst_ship、api_mst_slotitem（须为数组，且不能是空数组——
- *    字段存在但空数组会让后续处理悄悄产出空表，必须在这里拦下来，
- *    不能指望"处理后判断是否非空"这种事后检查）；api_mst_stype
- *    （须为数组，允许为空——它只是辅助数据，为空不是致命错误）
+ *    api_mst_ship、api_mst_slotitem、api_mst_stype（均须为数组，且不能是
+ *    空数组——字段存在但空数组会让后续处理悄悄产出空表，必须在这里拦下来，
+ *    不能指望"处理后判断是否非空"这种事后检查）。
+ *
+ *    ⚠️ api_mst_stype 曾经允许为空数组，注释写的理由是"它只是辅助数据"——
+ *    i18n 分支落地后这个前提不再成立：src/i18n/index.ts 的 stypeName()
+ *    ja 分支直接读 api_mst_stype[].api_name 作为日文舰种名的唯一来源，
+ *    空数组会让 ja 下全部舰种名回退成 stype 代码本身（如 'DD'）而不是
+ *    「駆逐艦」，是本轮修复的 P2 之一。api_name 因此也从"未校验字段"
+ *    变成"必须是字符串"，见下面第 5 条。
  *
  *    ⚠️ api_mst_equip_ship 与 api_mst_equip_exslot_ship **不在校验范围内**，
  *    是有意的：本项目从不消费这两张表。它们此前只喂给 ship.打孔装备 /
@@ -81,7 +87,8 @@ function isNumericArrayOfLength(v, len) {
  *    - api_type 不是数组、长度不是 5、或含非数值元素
  *    - api_broken 不是数组、长度不是 4、或含非数值元素
  *    - api_distance、api_cost：可选，存在时必须是有限数值
- * 5. api_mst_stype 的每一项：api_id 缺失/不是数值，api_equip_type 缺失/不是对象
+ * 5. api_mst_stype 的每一项：api_id 缺失/不是数值，api_equip_type 缺失/不是对象，
+ *    api_name 缺失/不是字符串（i18n 的 stypeName() ja 分支读它，见上面的 ⚠️）
  *
  * 边界：不做的事——不校验 stype/ctype 的取值是否在已知舰种范围内、
  * 不校验装备属性数值是否为非负数（有些参考实现里可能存在负值修正项，
@@ -105,6 +112,10 @@ export function validateStart2Payload(json) {
 
   if (json.api_mst_ship.length === 0) errors.push('api_mst_ship 为空数组')
   if (json.api_mst_slotitem.length === 0) errors.push('api_mst_slotitem 为空数组')
+  // 空数组曾经被允许（"只是辅助数据"），i18n 的 stypeName() ja 分支落地后
+  // api_mst_stype 变成了 ja 舰种名的唯一数据源，空数组不再是"没有影响的
+  // 缺省"，理由见本函数顶部 JSDoc 里那条 ⚠️。
+  if (json.api_mst_stype.length === 0) errors.push('api_mst_stype 为空数组')
 
   const seenShipIds = new Set()
   json.api_mst_ship.forEach((item, idx) => {
@@ -185,6 +196,9 @@ export function validateStart2Payload(json) {
     if (!isPlainObject(item)) { errors.push(`${label} 不是对象`); return }
     if (!isFiniteNumber(item.api_id)) errors.push(`${label} 缺少 api_id`)
     if (!isPlainObject(item.api_equip_type)) errors.push(`${label} 缺少 api_equip_type`)
+    // api_name 是 i18n 的 stypeName() ja 分支唯一的日文舰种名来源（见本
+    // 函数顶部 JSDoc 的 ⚠️），从"未校验字段"提升为必须存在的字符串。
+    if (typeof item.api_name !== 'string') errors.push(`${label} 缺少 api_name`)
   })
 
   return errors.length === 0 ? { ok: true, errors: [] } : { ok: false, errors }

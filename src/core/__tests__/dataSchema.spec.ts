@@ -36,11 +36,18 @@ function validEquip(overrides: Record<string, unknown> = {}) {
   }
 }
 
+// 一条能通过全部校验的最小合法舰种记录——api_mst_stype 曾经允许为空数组，
+// i18n 的 stypeName() ja 分支落地后它变成了 ja 舰种名的唯一数据源，
+// 空数组/缺 api_name 都不再合法（见 dataSchema.js 里对应的 ⚠️ 注释）。
+function validStype(overrides: Record<string, unknown> = {}) {
+  return { api_id: 1, api_name: '海防艦', api_equip_type: {}, ...overrides }
+}
+
 function validPayload(shipOverrides = {}, equipOverrides = {}) {
   return {
     api_mst_ship: [validShip(shipOverrides)],
     api_mst_slotitem: [validEquip(equipOverrides)],
-    api_mst_stype: [],
+    api_mst_stype: [validStype()],
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }
@@ -88,9 +95,21 @@ describe('validateStart2Payload', () => {
     expect(result.errors.join('\n')).toMatch(/api_mst_slotitem 为空数组/)
   })
 
-  it('api_mst_stype 允许为空数组（它只是辅助数据，不是致命错误）', () => {
-    const ok = { ...validPayload(), api_mst_stype: [] }
-    expect(validateStart2Payload(ok).ok).toBe(true)
+  // 曾经允许为空（"它只是辅助数据"），i18n 的 stypeName() ja 分支落地后
+  // api_mst_stype 变成了 ja 舰种名的唯一数据源，空数组会让 ja 下全部舰种名
+  // 回退成 stype 代码本身而不是日文名——不再是"没有影响的缺省"。
+  it('api_mst_stype 是空数组时拒绝（字段存在但为空，i18n 的 stypeName ja 分支拿不到任何日文舰种名）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_mst_stype 为空数组/)
+  })
+
+  it('api_mst_stype 记录缺少 api_name 时拒绝（stypeName 的 ja 分支读它作为日文舰种名）', () => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: undefined })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_mst_stype\[0\] 缺少 api_name/)
   })
 
   // 上游在 2026-07 把 api_mst_equip_ship 从「数组 + api_equip_type 数值数组」

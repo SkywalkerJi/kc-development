@@ -28,13 +28,16 @@ const VALID_EQUIP = {
 }
 
 // 完整、可成功解析的 start2.json 结构。注意：不能用空数组糊弄
-// api_mst_ship/api_mst_slotitem——G2 之后，字段齐全但为空数组会被
-// readStart2 判定为失败（见下面「G2」的专门用例），不再是"成功"。
+// api_mst_ship/api_mst_slotitem/api_mst_stype——G2 之后 api_mst_ship/
+// api_mst_slotitem 字段齐全但为空数组会被 readStart2 判定为失败（见下面
+// 「G2」的专门用例）；api_mst_stype 同理，i18n 的 stypeName() ja 分支落地
+// 后它变成了 ja 舰种名的唯一数据源，空数组不再是"没有影响的缺省"（见
+// src/core/dataSchema.js 里对应的 ⚠️ 注释），都不再算作"成功"。
 function goodStart2Payload() {
   return {
     api_mst_ship: [VALID_SHIP],
     api_mst_slotitem: [VALID_EQUIP],
-    api_mst_stype: [],
+    api_mst_stype: [{ api_id: 1, api_name: '海防艦', api_equip_type: {} }],
     api_mst_equip_ship: [],
     api_mst_equip_exslot_ship: {},
   }

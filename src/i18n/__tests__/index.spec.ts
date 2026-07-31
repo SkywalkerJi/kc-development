@@ -75,6 +75,28 @@ describe('i18n 门面', () => {
     expect(equipName(1)).toBe('12cm単装砲')
   })
 
+  // P1（本轮修复）：HTTP 200 + 响应体是合法但形状不对的 JSON（陈旧 CDN 缓存
+  // 条目吐出 null、反代错误页恰好是合法 JSON）此前会穿过 fetchJson()，被
+  // setLocale 当成"三份都成功"直接发布——equipName()/shipName() 要到下一次
+  // 渲染读表时才会因为 null 不是预期形状而炸，此时 locale 已经切换过去了，
+  // "失败就不切换"这条原子发布保证名存实亡。这里用与上一条用例完全相同的
+  // 断言（返回值、currentLocale、文案、equipName），只把"HTTP 失败"换成
+  // "HTTP 成功但 body 是 null"，验证两种失败被同等对待——校验逻辑本身在
+  // src/i18n/names/load.spec.ts 里已经覆盖了每条具体的拒绝路径，这里只确认
+  // 它真的接进了 setLocale 的原子发布链路，不是校验函数写好了但没人调用。
+  it('HTTP 200 但响应体是 null（陈旧缓存/错误页）时，与 HTTP 失败同等对待，整体不切换', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      String(url).includes('ships.json')
+        ? ({ ok: true, status: 200, json: async () => null } as unknown as Response)
+        : ({ ok: true, status: 200, json: async () => ({ 1: 'X' }) } as unknown as Response)))
+    const ok = await setLocale('en')
+    expect(ok).toBe(false)
+    expect(currentLocale.value).toBe('zh-Hans')
+    expect(t('label.fuel')).toBe('油')
+    expect(equipName(1)).toBe('12cm単装砲')
+    expect(shipName(78)).toBe('金剛')
+  })
+
   it('切到 ja 不请求 items/ships（日文名取自 start2），只请求 ctype', async () => {
     const f = mockFetchOk({ 'i18n/ja/ctype.json': { 6: '金剛型' } })
     vi.stubGlobal('fetch', f)
