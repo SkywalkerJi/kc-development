@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { buildShipTranslator, deriveCtypeName } from './kc3Names.mjs'
 import { validate } from './syncI18nValidate.mjs'
+import { buildThirdPartyNotice } from './thirdPartyNotice.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DATA = join(ROOT, 'public', 'data')
@@ -22,6 +23,24 @@ if (!KC3) {
 
 /** KC3 的 json 有的带 BOM，统一剥掉 */
 const load = (p) => JSON.parse(readFileSync(p, 'utf8').replace(/^﻿/, ''))
+/** 剥 BOM 但不当 JSON 解析——LICENSE 是纯文本 */
+const loadText = (p) => readFileSync(p, 'utf8').replace(/^﻿/, '')
+
+// 产出的 items/ships/ctype.json 是 KC3Kai/kc3-translations（MIT）的衍生数据，
+// MIT 要求"版权声明与许可声明须保留在软件的所有副本或实质性部分中"——这份
+// 校验必须在读取任何 KC3 数据**之前**做（P1：THIRD_PARTY_NOTICES 缺失或
+// 与数据来源的协议脱节，比任何一项翻译校验都更早地让整次同步失去意义）：
+// 克隆里没有 LICENSE，就没有可以合法引用这批数据、也没有可以如实转录的
+// 协议文本，此时同步任何数据都是在无声地丢弃 MIT 的署名/协议留存条款，
+// 必须直接拒绝，不能等到 validate() 那一步才发现。
+const KC3_LICENSE_PATH = join(KC3, 'LICENSE')
+if (!existsSync(KC3_LICENSE_PATH)) {
+  console.error(`未找到 ${KC3_LICENSE_PATH}`)
+  console.error('KC3Kai/kc3-translations 依 MIT 协议分发，协议要求版权与许可声明随数据一起保留；')
+  console.error('clone 里缺这份 LICENSE 文件就没有可转录的协议原文，拒绝继续同步（不产出无出处的数据）。')
+  process.exit(1)
+}
+const kc3LicenseText = loadText(KC3_LICENSE_PATH).trimEnd()
 
 /** 本项目 locale → KC3 目录名。ja 不对应任何目录，名称直接取自 start2。 */
 const KC3_DIR = { 'zh-Hans': 'scn', 'zh-Hant': 'tcn', en: 'en' }
@@ -52,6 +71,12 @@ for (const locale of ['ja', 'zh-Hans', 'zh-Hant', 'en']) {
   let ships = {}
   let ctype = {}
   let derivedCtype = {} // 仅 zh-Hans 用得到：scn 派生出的舰级名，只喂自校验，从不落盘
+  // 仅 zh-Hant/en 用得到：deriveCtypeName 真正派生成功（而不是 89 行那句
+  // `?? jaName` 兜底成日文原文）的舰级 ID 集合。只喂 validate() 的校验 4，
+  // 从不落盘——理由见 syncI18nValidate.mjs 里 validate() 对这个字段的注释：
+  // 「有译名」和「有值」在 ctype 表这里是两件不同的事，日文回填两者都满足
+  // 第二条却不满足第一条，只看 ctype[id] 是否 truthy 分不出这两种情况。
+  let derivedIds = new Set()
 
   if (locale === 'ja') {
     // items/ships 留空：日文名的唯一真值源是 start2.json 本身。复制一份进来
@@ -83,16 +108,30 @@ for (const locale of ['ja', 'zh-Hans', 'zh-Hant', 'en']) {
         ctypeJa.map((n, i) => [i, n ? deriveCtypeName(n, kc3Ships, kc3Affix.ctype ?? {}) : null]).filter(([, n]) => n),
       )
     } else {
+      // ?? jaName：查不到译名时直接回填日文原文，让 ctype 表本身自洽
+      // （运行时 ctypeName() 不存在另一份日文源可回退，见 src/i18n/index.ts
+      // 里 ctypeName 的注释）。但「回填了日文」不等于「派生出了译名」——
+      // derivedIds 只记真正 deriveCtypeName() 成功的那些 ID，喂给 validate()
+      // 的校验 4，让「开发池引用的舰级能不能查到值」与「查到的是不是真译名」
+      // 分开判断，不再混为一谈。
       ctype = Object.fromEntries(
         ctypeJa
-          .map((jaName, i) => [i, jaName ? (deriveCtypeName(jaName, kc3Ships, kc3Affix.ctype ?? {}) ?? jaName) : ''])
+          .map((jaName, i) => {
+            if (!jaName) return [i, '']
+            const derived = deriveCtypeName(jaName, kc3Ships, kc3Affix.ctype ?? {})
+            if (derived) derivedIds.add(i)
+            return [i, derived ?? jaName]
+          })
           .filter(([, n]) => n),
       )
     }
   }
 
-  produced[locale] = { items, ships, ctype, derivedCtype }
-  const note = locale === 'ja' ? '（items/ships 故意为空，名称取自 start2.json）' : ''
+  produced[locale] = { items, ships, ctype, derivedCtype, derivedIds }
+  const note = locale === 'ja' ? '（items/ships 故意为空，名称取自 start2.json）'
+    : (locale === 'zh-Hant' || locale === 'en')
+      ? `（其中派生 ${derivedIds.size} / 日文回填 ${Object.keys(ctype).length - derivedIds.size}）`
+      : ''
   console.log(`[${locale}] 装备 ${Object.keys(items).length} / 舰船 ${Object.keys(ships).length} / 舰级 ${Object.keys(ctype).length} ${note}`)
 }
 
@@ -126,11 +165,13 @@ for (const locale of ['ja', 'zh-Hans', 'zh-Hant', 'en']) {
 // 不会随仓库一起被 clone 下来。刻意不记生成时间戳：这份文件应当是
 // (KC3 commit, start2.json, DevelopmentPool.json) 的纯函数，同一输入重跑
 // 应该产出逐字节相同的 _meta.json，方便靠 git diff 判断"这次同步到底有没有变化"。
+const KC3_SOURCE_URL = 'https://github.com/KC3Kai/kc3-translations'
+
 writeFileSync(
   join(OUT, '_meta.json'),
   JSON.stringify(
     {
-      source: 'https://github.com/KC3Kai/kc3-translations',
+      source: KC3_SOURCE_URL,
       license: 'MIT',
       commit,
       commitResolved: commit !== null,
@@ -147,4 +188,15 @@ writeFileSync(
   'utf8',
 )
 
-console.log('校验通过。')
+// MIT 的留存条款不能只满足在仓库层面——一份从 dist/ 单独拿出去的构建产物
+// 也得带着它，见本文件顶部读 LICENSE 那段注释。两份内容完全相同（都是
+// buildThirdPartyNotice() 的输出，同一个 commit/licenseText）：
+// - 仓库根：随源码走读的人最先看到的地方，紧挨着本仓库自己的 GPLv3 LICENSE。
+// - public/data/i18n/：随生产构建一起进 dist/data/i18n/（vite 原样拷贝
+//   public/ 下的文件，不需要额外配置），挨着它描述的那批 JSON 数据本身——
+//   只有这一份能保证"数据"和"数据的许可声明"在任何裁剪/分发场景下都不分家。
+const notice = buildThirdPartyNotice({ source: KC3_SOURCE_URL, commit, licenseText: kc3LicenseText })
+writeFileSync(join(ROOT, 'THIRD_PARTY_NOTICES'), notice, 'utf8')
+writeFileSync(join(OUT, 'THIRD_PARTY_NOTICES'), notice, 'utf8')
+
+console.log('校验通过，THIRD_PARTY_NOTICES 已更新。')

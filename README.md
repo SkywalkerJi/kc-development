@@ -49,6 +49,19 @@ URL、许可证、本次同步用的 KC3 commit（解析不到时诚实记为 `n
 这份文件是产出数据出处的唯一持久记录。它不在 `tests/oracle.spec.ts` 的
 哈希钉死范围内。
 
+⚠️ **KC3 clone 里必须有 `LICENSE` 文件**：这批译名数据以 MIT 协议分发，
+MIT 要求版权声明与许可声明随数据一起保留。脚本会在读取任何 KC3 数据**之前**
+检查 `<kc3 clone>/LICENSE` 是否存在，缺了就直接非零退出、不产出数据——不能
+让「数据同步成功」和「许可证留存条款被满足」这两件事脱钩。校验通过后，
+脚本用这份 `LICENSE` 的原文生成 [`THIRD_PARTY_NOTICES`](./THIRD_PARTY_NOTICES)
+（仓库根目录）与 `public/data/i18n/THIRD_PARTY_NOTICES`（内容相同）两份文件，
+记录项目名、来源 URL、本次同步用的 commit，以及 MIT 协议全文（含版权行）：
+根目录那份供随源码走读的人查看，紧挨着本仓库自己的 GPLv3 `LICENSE`；
+`public/data/i18n/` 那份随生产构建原样进 `dist/data/i18n/`，保证单独拿走这批
+JSON 数据的人也能看到它的许可证——这两份文件都由脚本生成、随每次同步覆盖，
+不要手改。`scripts/__tests__/thirdPartyNotice.spec.ts` 钉住它们的 commit
+与 `_meta.json` 保持一致，防止两者未来因为忘记同步更新而各说各话。
+
 ⚠️ 更新 `public/data/start2.json` 后必须重跑本脚本 —— 舰船与装备的译名表是
 按当前那份 start2 的 ID 集合生成的。
 
