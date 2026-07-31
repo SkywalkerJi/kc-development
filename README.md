@@ -43,6 +43,12 @@ pnpm sync-i18n --kc3 /path/to/kc3-translations
 `start2.json`，复制一份进来会在 start2 更新而脚本没重跑时静默漂移。
 `zh-Hans` **不产出 `ctype.json`**：`public/data/ctype.json` 本身就是那份数据。
 
+校验全部通过后，脚本还会写一份 `public/data/i18n/_meta.json`，记录数据源
+URL、许可证、本次同步用的 KC3 commit（解析不到时诚实记为 `null` 而不是
+伪造一个像哈希的占位符）与四语言各自的产出计数——控制台输出不随仓库分发，
+这份文件是产出数据出处的唯一持久记录。它不在 `tests/oracle.spec.ts` 的
+哈希钉死范围内。
+
 ⚠️ 更新 `public/data/start2.json` 后必须重跑本脚本 —— 舰船与装备的译名表是
 按当前那份 start2 的 ID 集合生成的。
 
