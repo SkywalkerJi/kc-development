@@ -12,12 +12,20 @@
 //
 // 覆盖边界：不陪跑 onMounted 里 start2Store/developmentStore 两层 try/catch
 // 的每一条分支排列组合——那部分控制流是既有逻辑，本任务未改动其结构，只
-// 改了文案来源。这里挑了四条路径：正常加载中、外层 catch 的 error.unknown
-// 兜底、内层 devResult.success===false 的 error.poolLoadFailed 兜底；
-// devError 那层 catch 的 error.poolLoadException 走的是同一个
-// fragmentFromCaught 辅助函数、同一个 errorMessage computed，未单独起
-// 用例——与 error.unknown 那条（同样用 fragmentFromCaught）是重复的机制
-// 覆盖，不再重复举证。
+// 改了文案来源。这里挑了三条路径：正常加载中、外层 catch 的 error.unknown
+// 兜底、内层 devResult.success===false 的 error.poolLoadFailed 兜底。
+//
+// error.poolLoadException（devError 那层 catch）没有单独起用例：不是"机制
+// 已被别的用例覆盖过、懒得重复"，是这条分支在当前 store 实现下本来就打不到
+// ——developmentStore.initializeData() 内部把所有失败都 try/catch 转成
+// `{ success: false, error }` 正常返回，从不 reject（对照 start2Store：它的
+// initializeData 在 .catch 里是 `throw e` 重新抛出，真的会 reject，所以
+// 外层 catch 那条路径能测）。想让 devError 分支触发，得让
+// developmentStore.initializeData() 本身抛出/拒绝，而它的实现决定了这在不
+// 改 store 代码的前提下做不到。error.poolLoadException 因此是一个仅为与
+// error.poolLoadFailed 对称而加的防御性兜底，翻译机制（fragmentFromCaught +
+// errorMessage computed）已经被 error.unknown 那条用例证明过，这里不再为
+// 一条无法触发的分支硬凑用例。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import type { App } from 'vue'
