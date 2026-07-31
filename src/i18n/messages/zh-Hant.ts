@@ -59,6 +59,8 @@ export const zhHant: Record<MsgKey, string> = {
 
   'error.title': '錯誤詳情:',
   'error.unknown': '未知錯誤',
+  'error.poolLoadFailed': '開發池資料載入錯誤',
+  'error.poolLoadException': '開發池資料載入失敗',
 
   'locale.label': '語言',
   'locale.switchFailed': '語言切換失敗，已保持目前語言',

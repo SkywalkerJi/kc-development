@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useStart2Store } from '@/stores/start2Store'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 // 本地 import 而不是依赖 main.ts 里挂到 globalProperties 的那份：组件测试用
@@ -32,6 +32,41 @@ interface LoadingStep {
   completed: boolean;
 }
 
+/**
+ * errorMessage 的一行来源：要么是消息表 key（渲染期按当前语言翻译），要么
+ * 是已经定型的诊断文本（Error.message / 校验器抛出的信息，按设计保持
+ * 中文、原样透传，不查表）。
+ *
+ * 不能只存拼好的字符串——那样任何"未知错误"一类的兜底文案都是在赋值那一
+ * 刻调一次 t() 存死结果，跟改造前 loadingMessage 犯的是同一个错误：语言
+ * 切换不会触发重新求值。这里改存结构化片段，翻译推迟到 errorMessage 这个
+ * computed 里，随渲染重新执行。
+ */
+type ErrorFragment = { key: MsgKey } | { text: string }
+
+/**
+ * 从 store 返回的 `{ success, error }` 里的 error 字段构造一行片段。
+ * 该字段类型是 unknown，运行时要么是 Error、要么是 null/undefined
+ * （见 start2Store/developmentStore 的 `_initializeData`：所有失败都
+ * `throw new Error(...)`）。err 存在且 message 非空才当诊断文本原样保留，
+ * 否则退回消息表兜底 key——与原来的 `err ? (err as Error).message ||
+ * fallback : fallback` 等价。
+ */
+function fragmentFromStoreError(err: unknown, fallbackKey: MsgKey): ErrorFragment {
+  const message = err ? (err as Error).message : undefined
+  return message ? { text: message } : { key: fallbackKey }
+}
+
+/**
+ * 从 catch 到的异常构造一行片段。是 Error 实例就原样取 message——哪怕是
+ * 空字符串也不退回兜底，与原来的 `err instanceof Error ? err.message :
+ * fallback` 保持同样的边界行为；不是 Error 实例（比如 reject 了一个字符串）
+ * 才退回消息表兜底 key。
+ */
+function fragmentFromCaught(err: unknown, fallbackKey: MsgKey): ErrorFragment {
+  return err instanceof Error ? { text: err.message } : { key: fallbackKey }
+}
+
 const start2Store = useStart2Store()
 const developmentStore = useDevelopmentStore()
 const isLoading = ref(true)
@@ -41,18 +76,15 @@ const hasErrors = ref(false)
 // 不会触发这几行重新求值，面板文案就会冻结在组件挂载时的语言。存 key、
 // 在模板里 `$t(loadingMessageKey)` 才能让翻译随渲染重新执行。
 const loadingMessageKey = ref<MsgKey>('loading.data')
-// errorMessage 不是纯粹的"例外"：它主要拼接 Error.message / 校验器抛出的
-// 诊断文本（那部分按设计不翻译，见下面 catch 分支的注释），但四处
-// `未知错误` 兜底按 brief 换成了 `$t('error.unknown')`——这个调用同样是在
-// 赋值那一刻求值后把**字符串**存进 ref，不是存 key，所以严格说仍带一点点
-// 上面那条注释描述的问题：如果面板显示"未知错误"兜底文案时用户切换语言，
-// 这一小段不会跟着重新翻译（而 loadingMessageKey/loadingSteps 那些会）。
-// 没有为这四处单独再引入一个"错误兜底 key"式的响应式方案——errorMessage
-// 后续还会被同一个 catch 分支的诊断文本 `+=` 追加、拼接，做成完全响应式
-// 需要拆分"结构化片段 + 渲染期拼接"，改动面超出 brief 给的逐点替换范围；
-// 按 brief 字面执行，已在 Task 9 报告里记录为已知局限，留给后续任务判断
-// 是否值得为这一角落单独做响应式化。
-const errorMessage = ref('')
+const errorFragments = ref<ErrorFragment[]>([])
+// 模板不用改：这里从 errorFragments 派生出最终展示的字符串，key 片段在
+// 每次求值时调用 $t()，随当前语言重新翻译；text 片段（诊断文本）原样
+// 透传。多行之间用 \n 拼接——用 join 而不是原来的
+// `errorMessage.value += (errorMessage.value ? '\n' : '') + x`，是因为
+// 换行判断现在完全由数组元素个数决定，不需要再手动查"目前是不是空串"。
+const errorMessage = computed(() =>
+  errorFragments.value.map((f) => ('key' in f ? $t(f.key) : f.text)).join('\n')
+)
 const loadingSteps = ref<LoadingStep[]>([
   { key: 'loading.stepShip', completed: false },
   { key: 'loading.stepAbyssal', completed: false },
@@ -73,8 +105,8 @@ onMounted(async () => {
       if (!result.success) {
         hasErrors.value = true
         // result.error 来自数据校验器（dataSchema.js），面向维护者的诊断，
-        // 按设计保持中文，不经消息表翻译；只有兜底的"未知错误"走 t()。
-        errorMessage.value = result.error ? (result.error as Error).message || $t('error.unknown') : $t('error.unknown')
+        // 按设计保持中文，不经消息表翻译；只有兜底的"未知错误"走消息表。
+        errorFragments.value = [fragmentFromStoreError(result.error, 'error.unknown')]
       }
 
       // 显示加载结果（面向维护者的诊断日志，不翻译）
@@ -94,21 +126,25 @@ onMounted(async () => {
 
         if (!devResult.success) {
           hasErrors.value = true
-          errorMessage.value += (errorMessage.value ? '\n' : '') +
-            (devResult.error ? (devResult.error as Error).message || '开发池数据加载错误' : '开发池数据加载错误')
+          errorFragments.value = [
+            ...errorFragments.value,
+            fragmentFromStoreError(devResult.error, 'error.poolLoadFailed'),
+          ]
         }
       } catch (devError) {
         console.error('开发池数据加载失败', devError)
         hasErrors.value = true
-        errorMessage.value += (errorMessage.value ? '\n' : '') +
-          (devError instanceof Error ? devError.message : '开发池数据加载失败')
+        errorFragments.value = [
+          ...errorFragments.value,
+          fragmentFromCaught(devError, 'error.poolLoadException'),
+        ]
         loadingSteps.value[2].completed = false
       }
     } catch (error) {
       console.error('数据加载失败', error)
       loadingMessageKey.value = 'loading.failed'
       hasErrors.value = true
-      errorMessage.value = error instanceof Error ? error.message : $t('error.unknown')
+      errorFragments.value = [fragmentFromCaught(error, 'error.unknown')]
       isLoading.value = false
       return
     }
@@ -120,7 +156,7 @@ onMounted(async () => {
     console.error('数据加载过程发生错误', error)
     loadingMessageKey.value = 'loading.failedRetry'
     hasErrors.value = true
-    errorMessage.value = error instanceof Error ? error.message : $t('error.unknown')
+    errorFragments.value = [fragmentFromCaught(error, 'error.unknown')]
     isLoading.value = false
   }
 })

@@ -59,6 +59,8 @@ export const en: Record<MsgKey, string> = {
 
   'error.title': 'Error details:',
   'error.unknown': 'Unknown error',
+  'error.poolLoadFailed': 'Development pool data load error',
+  'error.poolLoadException': 'Failed to load development pool data',
 
   'locale.label': 'Language',
   'locale.switchFailed': 'Failed to switch language; keeping the current one',
