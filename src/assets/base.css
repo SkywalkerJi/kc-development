@@ -55,6 +55,17 @@
  * - --form-label-width 是从「秘书舰类型：」6 个全角字符推出来的 6.5em。
  *   英文的 "Secretary Ship Type:" 会撑爆它，下拉框与搜索框左边缘随之错开。
  *
+ * ⚠️ :lang(en) 的字体栈末尾额外挂了一段日文 CJK 族，这不是笔误：装备名/
+ * 舰名查不到译名时回退的是**日文原名**而不是英文占位符（src/i18n/index.ts
+ * 的 equipName/shipName），Task 2 记录过 KC3 的装备表本身就缺 4 条译名、
+ * 这是结构性常态不是一次性的边界情况；ctype 表更进一步——sync-i18n 生成
+ * en 表时，查不到译名的条目**按设计**直接回填日文原文（同文件 ctypeName
+ * 的注释）。也就是说 en 界面渲染日文汉字是设计内的必然，不是异常路径。
+ * 沿用上面 --app-font-sans 那条注释的教训：西文字体栈本身不含汉字，句尾
+ * 的 sans-serif 通用族不会顺着单字符回落，缺了日文字体的系统上这些日文
+ * 原名会直接变成方块（tofu）。因此 en 栈必须显式带上日文字体族兜底——
+ * 千万不要因为「这是英文栈」把它当冗余删掉。
+ *
  * ⚠️ 下面三个宽度值是按「最长标签字符数 + 0.5em 余量」估的初值。
  * 现有注释里那句「实测 input.x - label.right === 0」说明这个项目对这类值
  * 是要量的：改完请在浏览器里切到各语言，用 getBoundingClientRect 核对
@@ -78,9 +89,12 @@
 
 :root:lang(en) {
   --form-label-width: 11em;   /* "Secretary Ship Type:" 20 个拉丁字符，均宽约 0.5em */
+  /* 日文尾巴（Hiragino Sans / Yu Gothic / Noto Sans CJK JP）不是抄错块——
+     见上面那条 ⚠️ 注释：en 下渲染的日文回退原名需要这些字体兜底。 */
   --app-font-sans:
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo,
+    "Noto Sans CJK JP", "Source Han Sans JP", sans-serif;
 }
 
 body {

@@ -98,4 +98,39 @@ describe('LocaleSwitcher', () => {
     expect(select.value).toBe('zh-Hans')
     expect(document.documentElement.lang).toBe('zh-Hans')
   })
+
+  // 上面两个用例各自独立，都没证明失败横幅会在后续一次成功切换时消失——
+  // onChange 里 `failed.value = !(await setLocale(next))` 无条件覆盖旧值，
+  // 理论上第二次成功调用会把它重新写成 false，但这只是代码推理，不是观测
+  // 结果。如果这行以后被改成只在失败分支赋值（比如写成
+  // `if (!ok) failed.value = true`，漏了成功分支该清空），横幅就会卡住
+  // 不消失——这种回归不会被前两个各自独立的用例发现，只有连续跑一次失败
+  // 再成功才能看见。
+  it('先失败后成功：失败横幅在下一次成功切换后消失，select 落在新语言上', async () => {
+    // 用一个可变标志切换 fetch 行为的两个阶段，不用对 locale 的请求路径
+    // （en 请求 3 个文件、ja 只请求 ctype.json）做特判。
+    let shouldFail = true
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      shouldFail
+        ? ({ ok: false, status: 500 } as unknown as Response)
+        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response)))
+    mount()
+    const select = container!.querySelector('select') as HTMLSelectElement
+
+    // 第一次：切到 en，请求失败，横幅应出现
+    select.value = 'en'
+    select.dispatchEvent(new Event('change'))
+    await flush()
+    expect(container!.querySelector('.switch-failed')).not.toBeNull()
+    expect(select.value).toBe('zh-Hans')
+
+    // 第二次：请求转为成功，切到 ja，横幅应消失、select 落在 ja 上
+    shouldFail = false
+    select.value = 'ja'
+    select.dispatchEvent(new Event('change'))
+    await flush()
+    expect(container!.querySelector('.switch-failed')).toBeNull()
+    expect(select.value).toBe('ja')
+    expect(document.documentElement.lang).toBe('ja')
+  })
 })

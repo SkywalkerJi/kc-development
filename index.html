@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <!-- 与 i18n 的默认语言一致。首帧在 initLocale() 跑完之前就已经按这个值
-     选字体栈（见 assets/base.css 的 :lang() 规则），留空会造成字体闪烁。 -->
+     选字体栈（见 assets/base.css 的 :lang() 规则），留空会造成字体闪烁。
+
+     这条只保证 zh-Hans 用户（含首次访问、探测不出语言而兜底的用户）不
+     闪烁：localStorage 里存着 ja/en 记录的回头用户（src/i18n/index.ts
+     的 initLocale 里读 STORAGE_KEY 那一段）首帧仍然会先按这里的
+     zh-Hans 渲染，等 setLocale 异步加载完成、写回 <html lang> 之后才
+     重排成目标语言的字体栈与 --form-label-width——这是 main.ts 里
+     「挂载后再调 initLocale，不阻塞首屏」这个既定取舍的必然代价，这里
+     的静态值改不掉它，只能保证默认语言那一支不闪烁。 -->
 <html lang="zh-Hans">
   <head>
     <meta charset="UTF-8">
