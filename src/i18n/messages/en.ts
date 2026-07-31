@@ -1,7 +1,9 @@
 import type { MsgKey } from '../types'
 
 export const en: Record<MsgKey, string> = {
-  'title.app': 'Equipment Development',
+  'title.app': 'KanColle Equipment Development Calculator',
+  'title.tagline': 'Rates from resources, recipes from equipment',
+  'meta.description': 'KanColle equipment development calculator: pick a secretary ship, enter fuel/ammo/steel/bauxite, and get the development rate and minimum resources for every item — or pick the equipment you want and work back to every usable recipe.',
   'title.development': 'Equipment Development',
   'error.initFailed': 'Failed to load development data. Please reload the page.',
 
@@ -66,4 +68,11 @@ export const en: Record<MsgKey, string> = {
   'locale.label': 'Language',
   'locale.switchFailed': 'Failed to switch language; keeping the current one',
   'locale.retry': 'Retry',
+
+  'link.github': 'View the source on GitHub',
+  'link.x': 'Follow the author on X',
+
+  'footer.credit': 'Translation data from KC3Kai/kc3-translations (MIT)',
+  'footer.license': 'This project is distributed under GPL-3.0',
+  'footer.disclaimer': 'An unofficial fan-made tool, not affiliated with DMM GAMES or Kadokawa Games',
 }

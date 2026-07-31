@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!--
+  public/og-image.png 的**源文件**（1200×630，社交平台分享卡片用图）。
+  由 scripts/gen-assets.mjs 用本机 Chrome 截图成 PNG，两者都提交进仓库
+  ——只提交 PNG 会让下一个人拿到一个改不动、也说不清怎么来的二进制。
+
+  为什么是 HTML 而不是直接给一张 SVG：X（Twitter）的抓取器不接受 SVG 作
+  og:image，最终必须是 PNG/JPEG；既然都要过一次渲染器，用 HTML 排版比在
+  SVG 里手算每一行文字的 x/y 省事得多，中日文换行、字距也由浏览器负责。
+
+  字体只写本机装得到的中文族，不引外部字体：这个文件永远在本地跑，联网
+  拉字体只会让离线时产出一张字体回退过的图，而 PNG 一旦生成就看不出来了。
+-->
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+    }
+
+    /*
+     * 尺寸都是照 630 的净高排过的：上下 72 内边距留出 486 的可用高度，
+     * 而下面各块加起来约 390，居中之后上下各余约 48。h1 的 62px 同样是
+     * 算过的——「舰队 Collection 装备开发计算器」在 1056 的可用宽度里约
+     * 占 930，刚好单行放下。改任何一个字号之前先重算这两笔，标题一旦折行
+     * 整块内容会顶破 630、把底部那行 URL 挤出画面。
+     */
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 26px;
+      padding: 72px;
+      font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+                   "Microsoft YaHei", "WenQuanYi Zen Hei", sans-serif;
+      color: #eaf3fa;
+      /* 主渐变 + 右上角一团高光，避免 1200×630 这么大一块纯色显得死板 */
+      background:
+        radial-gradient(900px 520px at 88% -10%, rgba(74, 158, 226, 0.42), transparent 62%),
+        linear-gradient(135deg, #12395b 0%, #0b2136 55%, #081726 100%);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .mark {
+      width: 84px;
+      height: 84px;
+      flex: none;
+    }
+
+    .brand-text {
+      font-size: 28px;
+      letter-spacing: 0.16em;
+      color: #8fc3ec;
+    }
+
+    h1 {
+      font-size: 62px;
+      line-height: 1.22;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      /* 单行是排版前提（见 body 那段注释），万一以后改了文案，宁可让它
+         溢出被一眼看见，也不要悄悄折行把底部内容挤出画面 */
+      white-space: nowrap;
+    }
+
+    .tagline {
+      font-size: 32px;
+      line-height: 1.5;
+      color: #b9d5ec;
+      font-weight: 400;
+    }
+
+    .foot {
+      display: flex;
+      align-items: baseline;
+      gap: 24px;
+      margin-top: 12px;
+      font-size: 26px;
+      color: #7fa9cd;
+    }
+
+    .foot .url { color: #cfe4f5; }
+
+    /* 底部一条渐隐的高光线，把整张图收住 */
+    .rule {
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #4a9ee2, rgba(74, 158, 226, 0));
+    }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <!-- 与 public/favicon.svg 同一套形状，内联在这里而不是 <img> 引用：
+         截图脚本用 file:// 打开本文件，外链一旦路径算错会静默出一张缺图的
+         PNG，而内联的形状不可能加载失败。两处形状要一起改。 -->
+    <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#3f8bc8"/>
+          <stop offset="1" stop-color="#0e2a42"/>
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+      <g fill="none" stroke="#eaf3fa" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="32" cy="14.5" r="4.75"/>
+        <path d="M32 19.5v33"/>
+        <path d="M20 25.5h24"/>
+        <path d="M13 35c0 11.5 8.5 17.5 19 17.5S51 46.5 51 35"/>
+      </g>
+    </svg>
+    <div class="brand-text">KANCOLLE TOOLS</div>
+  </div>
+
+  <div class="rule"></div>
+
+  <h1>舰队 Collection 装备开发计算器</h1>
+  <p class="tagline">投入资源 → 看出货率　·　选中装备 → 反推配方</p>
+
+  <div class="foot">
+    <span class="url">skywalkerji.github.io/kc-development-tools</span>
+    <span>简体中文 · 繁體中文 · 日本語 · English</span>
+  </div>
+</body>
+</html>

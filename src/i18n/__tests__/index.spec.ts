@@ -396,6 +396,41 @@ describe('i18n 门面', () => {
     }))
     await setLocale('en')
     expect(document.title).toBe(t('title.app'))
-    expect(document.title).toBe('Equipment Development')
+    // 第二条断言刻意写死字面量：只比 t('title.app') 的话，两边读的是同一个
+    // 表，消息表整个错掉也一样绿。改站名时这一行要跟着改（连同四个
+    // messages 文件、scripts/verify-render.mjs 的 EXPECTED、index.html 的
+    // 静态 <title>）。
+    expect(document.title).toBe('KanColle Equipment Development Calculator')
+  })
+
+  // 与上一条同源：<meta name="description"> 和 document.title 在 doSwitch 里
+  // 是同一处副作用，覆盖了标题却不覆盖描述，等于只钉住了其中一半。
+  it('切换语言后 <meta name="description"> 跟着变成对应语言的 meta.description', async () => {
+    const meta = document.createElement('meta')
+    meta.setAttribute('name', 'description')
+    meta.setAttribute('content', '旧的描述')
+    document.head.appendChild(meta)
+    try {
+      vi.stubGlobal('fetch', mockFetchOk({
+        'i18n/en/items.json': { 1: 'X' }, 'i18n/en/ships.json': { 1: 'X' }, 'i18n/en/ctype.json': { 1: 'X' },
+      }))
+      await setLocale('en')
+      expect(meta.getAttribute('content')).toBe(t('meta.description'))
+      expect(meta.getAttribute('content')).not.toBe('旧的描述')
+    } finally {
+      meta.remove()
+    }
+  })
+
+  // 这条守的是 doSwitch 里那个可选链：单测环境（以及任何没有这个 <meta> 的
+  // 宿主页面）下 querySelector 返回 null，切换必须照样成功——如果哪天有人把
+  // `?.` 去掉，切换会整个抛进 catch 分支、被当成"加载失败"，而真正的名称表
+  // 其实已经取到了。
+  it('页面上没有 description meta 时，切换语言仍然成功', async () => {
+    expect(document.querySelector('meta[name="description"]')).toBeNull()
+    vi.stubGlobal('fetch', mockFetchOk({
+      'i18n/en/items.json': { 1: 'X' }, 'i18n/en/ships.json': { 1: 'X' }, 'i18n/en/ctype.json': { 1: 'X' },
+    }))
+    expect(await setLocale('en')).toBe(true)
   })
 })

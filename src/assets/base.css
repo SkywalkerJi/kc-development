@@ -42,6 +42,84 @@
 
   /* 「秘书舰类型」下拉框与「秘书舰」搜索框共用的控件宽度 */
   --form-control-width: 300px;
+
+  /* ===================================================================
+   * 设计令牌。所有组件的颜色/圆角/阴影都从这里取，不再在各自的 scoped
+   * 样式里写死十六进制——改造前 #ddd/#f0f0f0/#e8f5e9 这类值散落在四个
+   * SFC 里，同一种「边框灰」有三个不同的值，也没有任何办法整体切深色。
+   *
+   * ⚠️ 上面 --app-font-sans 与 --form-label-width **不属于**这套令牌，
+   * 不要顺手一起改：scripts/verify-render.mjs 的 EXPECTED 逐字钉着它们
+   * 在四个语言下的值（bodyFontFamily / formLabelWidthRaw），而且
+   * --form-label-width 的取值依据是用真实浏览器量出来的（见上面几个
+   * :lang() 块）。颜色类令牌则完全没有断言涉及，可以自由调。
+   * =================================================================== */
+
+  color-scheme: light dark;
+
+  --c-bg: #f4f7fa;          /* 页面底色，与 index.html 的 theme-color 同值 */
+  --c-surface: #ffffff;     /* 卡片/面板底 */
+  --c-surface-2: #eef3f8;   /* 次级底：表头、组头、按钮 */
+  --c-surface-3: #e4ecf4;   /* 三级底：hover */
+  --c-border: #dae3ec;
+  --c-border-strong: #bccbda;
+  --c-text: #1d2b38;
+  --c-text-muted: #5a7085;
+  --c-text-faint: #8b9fb2;
+  --c-accent: #2a6ea6;
+  --c-accent-hover: #1d5687;
+  --c-accent-soft: #e2eefb; /* 选中行/选中按钮的底色 */
+  --c-success: #2f7d4f;
+  --c-danger: #c0392b;
+  --c-danger-soft: #fdeceb;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 38, 58, 0.06);
+  --shadow: 0 2px 10px rgba(16, 38, 58, 0.08);
+  --shadow-lg: 0 10px 30px rgba(16, 38, 58, 0.14);
+
+  /* 键盘焦点环。统一一处定义，避免每个可聚焦元素各写一套粗细/颜色 */
+  --focus-ring: 0 0 0 3px rgba(42, 110, 166, 0.4);
+}
+
+/*
+ * 深色模式。只覆盖颜色类令牌，尺寸/圆角/字体栈一概不动——尤其**不要**在
+ * 这里碰 --app-font-sans：那会让 verify-render 在深色偏好的机器上报出一个
+ * 与配色无关的字体栈差异。
+ *
+ * 用 prefers-color-scheme 而不是自己做一个主题开关：这个站没有账号、没有
+ * 服务端，多一个开关就要多一处持久化状态（localStorage 已经存了语言），
+ * 而跟随系统对绝大多数用户就是正确答案。将来真要手动开关，把下面这组值
+ * 复制进一个 [data-theme="dark"] 选择器即可，令牌名不用变。
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: #0f1a24;
+    --c-surface: #16232f;
+    --c-surface-2: #1d2d3b;
+    --c-surface-3: #253748;
+    --c-border: #2b3d4e;
+    --c-border-strong: #3d5468;
+    --c-text: #dbe6f0;
+    --c-text-muted: #93a8bb;
+    --c-text-faint: #6b8296;
+    --c-accent: #6fb3e8;
+    --c-accent-hover: #9acdf5;
+    --c-accent-soft: #18324a;
+    --c-success: #63c68a;
+    --c-danger: #f0897c;
+    --c-danger-soft: #3a2321;
+
+    /* 深色下阴影几乎看不见，靠加深来制造层次而不是靠"更黑的黑" */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+    --focus-ring: 0 0 0 3px rgba(111, 179, 232, 0.45);
+  }
 }
 
 /*
@@ -160,5 +238,79 @@
 body {
   margin: 0;
   padding: 0;
+  /* ⚠️ 这一行**必须**原样保持 `var(--app-font-sans)`：
+     scripts/verify-render.mjs 读的是 getComputedStyle(document.body)
+     .fontFamily，并与 EXPECTED 里四个语言各自的完整字体栈逐字比对。
+     在这里追加任何字族、或者把它拆成 font 简写，都会让四个语言全红。 */
   font-family: var(--app-font-sans);
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  line-height: 1.6;
+
+  /* 页面三段（header / main / footer）纵向排布，main 撑开剩余高度，
+     内容不足一屏时页脚仍然贴在视口底部而不是浮在半空。
+     ⚠️ 只影响这三个直接子元素的纵向堆叠，不改变它们的宽度（flex 容器
+     默认 align-items: stretch），.left-panel 那一串横向布局与实测宽度
+     不受影响。 */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * 原生表单控件默认用的是操作系统的 UI 字体、且字号比正文小一档（Chrome 下
+ * 13.33px），混在 16px 的正文里会显得又小又不搭。font: inherit 让它们回到
+ * 页面自己的字体栈与字号。
+ *
+ * 这一条只作用于元素选择器（特指度 0,0,1），组件里 .equipment-buttons
+ * button 那类带 class 的规则照样覆盖得掉，不会把它们的 0.9em 顶回去。
+ */
+input,
+select,
+button,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:hover,
+select:hover {
+  border-color: var(--c-accent);
+}
+
+/*
+ * 全站统一的键盘焦点环。用 :focus-visible 而不是 :focus——后者会让鼠标点击
+ * 也留下一圈焦点环，那是很多人第一反应想 `outline: none` 掉的东西，而一旦
+ * 关掉，键盘用户就彻底失去了"我在哪"的指示。:focus-visible 只在浏览器判定
+ * 为键盘操作时出现，两边的诉求同时满足。
+ */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+input:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: var(--focus-ring);
+}
+
+a {
+  color: var(--c-accent);
+  text-decoration-color: color-mix(in srgb, var(--c-accent) 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--c-accent-hover);
+  text-decoration-color: currentColor;
 }

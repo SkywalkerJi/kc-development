@@ -1,0 +1,29 @@
+<!--
+  站点图标（真值源）。apple-touch-icon.png 由它派生，见 scripts/gen-assets.mjs。
+
+  只用路径与线性渐变，不引用外部字体/图片：SVG favicon 在浏览器里是当作
+  独立文档加载的，拿不到页面的样式与资源。
+
+  尺寸取 64 的 viewBox 而不是 16：描边宽度写成 4.5 时，缩到 16px 标签页里
+  约 1.1px，既不会细到消失、也不会糊成一团；直接按 16 画则每一笔都必须是
+  整数像素，锚链那条弧线画不出来。
+
+  颜色写死深海军蓝，不跟随 prefers-color-scheme：标签页图标的背景由浏览器
+  UI 决定（多数深色主题下是深灰而非纯黑），一个自适应的图标反而会在某些
+  主题下与背景融成一片。深底 + 浅色线条在明暗两种标签栏上都立得住。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="装备开发">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a6ea6"/>
+      <stop offset="1" stop-color="#0e2a42"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g fill="none" stroke="#eaf3fa" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="14.5" r="4.75"/>
+    <path d="M32 19.5v33"/>
+    <path d="M20 25.5h24"/>
+    <path d="M13 35c0 11.5 8.5 17.5 19 17.5S51 46.5 51 35"/>
+  </g>
+</svg>

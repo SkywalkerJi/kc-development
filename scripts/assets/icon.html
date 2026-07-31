@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<!--
+  public/apple-touch-icon.png 的源文件（180×180），由 scripts/gen-assets.mjs
+  截图成 PNG。
+
+  为什么要这层 HTML 包装、而不是让截图脚本直接打开 public/favicon.svg：
+  一个只有 viewBox、没有 width/height 的 SVG 作为**顶层文档**在 headless
+  Chrome 里截不出内容（实测产出一张全空的 180×180 PNG）；同一个文件被
+  <img> 引用时则正常渲染。包一层的另一个好处是形状仍然只有 favicon.svg
+  一个真值源——这里只引用它，不复制它的路径数据，改图标只改那一个文件。
+-->
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 180px; height: 180px; }
+    /* 铺满整块画布：iOS 会自己给主屏图标加圆角遮罩，图内不留白边 */
+    img { width: 180px; height: 180px; display: block; }
+  </style>
+</head>
+<body>
+  <img src="../../public/favicon.svg" alt="">
+</body>
+</html>

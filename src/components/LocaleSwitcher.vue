@@ -66,14 +66,50 @@ async function onRetry() {
 </script>
 
 <style scoped>
+/*
+ * 这个组件现在渲染在 AppHeader 的一组页头控件里，横向位置由那边的 flex
+ * 决定——原来的 `justify-content: flex-end` 与 `margin-bottom: 8px` 是它
+ * 独占一行、贴在主内容上方时的写法，留着会在页头里多出一截空白并与
+ * AppHeader 自己的对齐规则打架，一并去掉。
+ */
 .locale-switcher {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: flex-end;
-  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.locale-switcher select { padding: 4px; }
-.switch-failed { color: #c00; font-size: 0.9em; }
-.switch-retry { font-size: 0.9em; padding: 2px 8px; }
+
+.locale-switcher label {
+  font-size: 0.8rem;
+  color: var(--c-text-muted);
+}
+
+.locale-switcher select {
+  padding: 4px 6px;
+  font-size: 0.85rem;
+}
+
+.locale-switcher select:disabled {
+  opacity: 0.6;
+  cursor: progress; /* 切换途中：不是"不可用"，是"正在办" */
+}
+
+.switch-failed {
+  color: var(--c-danger);
+  font-size: 0.8rem;
+}
+
+.switch-retry {
+  font-size: 0.8rem;
+  padding: 2px 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--c-surface-2);
+  cursor: pointer;
+}
+
+.switch-retry:hover:not(:disabled) {
+  background-color: var(--c-surface-3);
+  border-color: var(--c-accent);
+}
 </style>

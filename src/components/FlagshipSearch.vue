@@ -192,6 +192,9 @@ function choose(shipId: number) {
  * 那个宽度本身就会随视口连续变化，任何写死的像素断点都只是在猜它，
  * 猜的断点还会与它各玩各的、迟早对不上。
  */
+/* ⚠️ 不要给这个标签设 font-size：scripts/verify-render.mjs 断言它与
+   DevelopmentView 的「秘书舰类型」标签**字号相等**（那是 --form-label-width
+   用 em 表达、两处共用同一个值的前提）。要改字号必须两个组件一起改。 */
 .flagship-search label {
   display: inline-block;
   width: var(--form-label-width);
@@ -242,13 +245,20 @@ function choose(shipId: number) {
   left: 0;
   top: 100%;
   position: absolute; z-index: 10; margin: 2px 0 0; padding: 0;
-  list-style: none; border: 1px solid #ccc; background: #fff;
+  list-style: none;
   max-height: 240px; overflow-y: auto;
   min-width: var(--form-control-width);
+  /* ⚠️ 上面 margin 的左值必须保持 0：scripts/verify-render.mjs 断言
+     suggestionsList.x 与 flagshipInput.x **严格相等**（零容差）。任何
+     margin-left / transform / 给 .field 加 padding，都会让这一条报红。 */
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+  box-shadow: var(--shadow-lg);
 }
-.suggestions li { padding: 4px 8px; cursor: pointer; }
-.suggestions li:hover { background: #e8f4e8; }
-.hint { color: #888; font-size: 0.85em; }
+.suggestions li { padding: 5px 9px; cursor: pointer; }
+.suggestions li:hover { background: var(--c-accent-soft); }
+.hint { color: var(--c-text-faint); font-size: 0.85em; }
 
 /* 结果行缩进到与输入框同一条左边缘，避免它们贴着容器最左边、
    与上面的「标签 + 控件」两列错开 */
@@ -256,7 +266,7 @@ function choose(shipId: number) {
   margin: 6px 0 0 var(--form-label-width);
   font-size: 0.9em;
 }
-.matched { color: #000; }
-.mismatched { color: #c00; }
-.miss { color: #888; }
+.matched { color: var(--c-text); }
+.mismatched { color: var(--c-danger); }
+.miss { color: var(--c-text-faint); }
 </style>

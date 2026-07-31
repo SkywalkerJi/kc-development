@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "sync-data": "node scripts/sync-data.mjs",
     "sync-i18n": "node scripts/sync-i18n.mjs",
+    "gen-assets": "node scripts/gen-assets.mjs",
     "verify-render": "pnpm build && node scripts/verify-render.mjs"
   },
   "dependencies": {

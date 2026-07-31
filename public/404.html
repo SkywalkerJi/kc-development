@@ -1,17 +1,50 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-Hans">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>重定向</title>
+  <!-- 这是一个纯跳板页，本身没有任何值得索引的内容；不加 noindex 的话
+       GitHub Pages 会把它作为**所有**未命中路径的响应体返回，搜索引擎可能
+       把一堆不存在的 URL 都收录成这一页。 -->
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <title>正在跳转…</title>
+  <!-- 样式内联：public/ 下的文件由 vite 原样拷贝，既读不到构建期常量，
+       也不参与打包，引用不到应用自己的样式表。这里只用最基础的几条，
+       与站内配色大致对齐即可，不必也不该在这里复刻整套设计令牌。 -->
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+                   Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      background: #f4f7fa;
+      color: #24313d;
+    }
+    .box { text-align: center; line-height: 1.7; }
+    .mark { width: 56px; height: 56px; margin-bottom: 1rem; }
+    a { color: #2a6ea6; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0f1a24; color: #d6e2ec; }
+      a { color: #7ab6e8; }
+    }
+  </style>
   <script>
     // 获取当前URL路径
     const path = window.location.pathname;
     // 必须与 vite.config.ts 的 base、scripts/verify-render.mjs 的 BASE_PATH
     // 一致（三者都等于仓库名）。这个文件在 public/ 下、由 vite 原样拷贝，
     // 读不到构建期常量，只能硬编码；仓库改名时三处要一起改。
+    // ⚠️ 下面 <body> 里那个「手动回到首页」链接的 href 是本文件内的第二份
+    // 副本（无 JS 时这段脚本不会执行，链接是唯一的出路，因此它只能写成
+    // 静态字面量），改这里要连它一起改。
     const baseUrl = '/kc-development-tools/';
-    
+
     // 如果路径以基础URL开头且不等于基础URL（不是根路径）
     if (path.startsWith(baseUrl) && path !== baseUrl && path !== baseUrl.slice(0, -1)) {
       // 重定向到基础URL，将路径部分作为hash参数
@@ -24,6 +57,18 @@
   </script>
 </head>
 <body>
-  <p>正在重定向...</p>
+  <div class="box">
+    <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#1d4f77"/>
+      <g fill="none" stroke="#eaf3fa" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="32" cy="14.5" r="4.75"/>
+        <path d="M32 19.5v33"/>
+        <path d="M20 25.5h24"/>
+        <path d="M13 35c0 11.5 8.5 17.5 19 17.5S51 46.5 51 35"/>
+      </g>
+    </svg>
+    <p>正在跳转到装备开发计算器…</p>
+    <p><a href="/kc-development-tools/">如果没有自动跳转，点这里回到首页</a></p>
+  </div>
 </body>
-</html> 
+</html>

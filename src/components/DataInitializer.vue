@@ -163,30 +163,45 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/*
+ * ⚠️ 这个 `.data-loading` class 名不能改，整块的"加载完成后消失"也不能改成
+ * 常驻的状态条：scripts/verify-render.mjs 的 waitForAppSettled() 轮询的正是
+ * `!document.querySelector('.data-loading')`，把它留在页面上会让四个语言各
+ * 等 20 秒然后判失败。真要做常驻状态指示，换一个 class 名。
+ */
 .data-loading {
+  max-width: 1200px;   /* 与 .development-view / 页头 / 页脚 对齐 */
+  margin: 0 auto 1rem;
   padding: 1rem;
-  background-color: #f5f5f5;
-  border-radius: 4px;
-  margin-bottom: 1rem;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   text-align: center;
 }
 
 .error-details {
   margin-top: 1rem;
-  color: #d9534f;
+  color: var(--c-danger);
   text-align: left;
-  padding: 0.5rem;
-  background-color: #f9eaea;
-  border-radius: 4px;
+  padding: 0.75rem;
+  background-color: var(--c-danger-soft);
+  border: 1px solid var(--c-danger);
+  border-radius: var(--radius-sm);
+  /* 诊断文本里的换行是 errorMessage 用 \n 拼出来的（见 script 部分），
+     不保留空白的话多行错误会挤成一行 */
+  white-space: pre-wrap;
 }
 
 .error-title {
-  font-weight: bold;
+  font-weight: 600;
 }
 
 .loading-steps {
   margin-top: 1rem;
   text-align: left;
+  font-size: 0.9rem;
+  color: var(--c-text-muted);
 }
 
 .loading-steps ul {
@@ -199,6 +214,6 @@ onMounted(async () => {
 }
 
 .loading-steps .completed {
-  color: #5cb85c;
+  color: var(--c-success);
 }
 </style> 

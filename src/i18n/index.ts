@@ -217,6 +217,18 @@ async function doSwitch(next: Locale, persist: boolean): Promise<boolean> {
     loaded.value = true
     document.documentElement.lang = next
     document.title = t('title.app')
+    // <meta name="description"> 与 document.title 同一处、同一时机更新：都是
+    // 「语言变了就要跟着变」的文档级副作用，没有模板负责渲染它们。
+    //
+    // 可选链不是防御性写法，是必需的：这个函数在 jsdom 单测里也会跑，那里的
+    // document 只有一个空 <head>，没有 index.html 里的那个 <meta>。查不到就
+    // 什么也不做即可——这一行的价值只在真实页面上。
+    //
+    // ⚠️ og:*/twitter:* 刻意**不**在这里同步更新。读它们的社交抓取器不执行
+    // JavaScript，只解析 index.html 的静态文本，这里改了它们也永远看不到；
+    // 加进来只会多一份没有任何消费者的运行时副作用。详见 index.html 里那段
+    // 说明。
+    document.querySelector('meta[name="description"]')?.setAttribute('content', t('meta.description'))
     if (persist) {
       try { localStorage.setItem(STORAGE_KEY, next) } catch { /* 隐私模式下 setItem 会抛，不该因此切换失败 */ }
     }

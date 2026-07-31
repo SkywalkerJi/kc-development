@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import AppHeader from './components/AppHeader.vue'
+import AppFooter from './components/AppFooter.vue'
 import DataInitializer from './components/DataInitializer.vue'
-import LocaleSwitcher from './components/LocaleSwitcher.vue'
+// LocaleSwitcher 不再由这里渲染——它搬进了 AppHeader，与 GitHub/X 两个链接
+// 排在同一组页头控件里。这里保留这行说明，是因为"语言选择器去哪了"是下一个
+// 人在这个文件里最可能找的东西。
 
 // 此前这里有一段「数据加载状态面板」：三个 computed（舰船数/装备数/同型舰
 // 组数）、三个 ref（dataError/dataLoaded/errorMessage），外加 onMounted 里
@@ -17,11 +21,18 @@ import LocaleSwitcher from './components/LocaleSwitcher.vue'
 </script>
 
 <template>
+  <!--
+    header / main / footer 三段是 body 这个 flex 列的直接子元素（布局见
+    assets/base.css 里 body 的注释）。header 与 footer 刻意放在 <main>
+    **之外**：<main> 的语义是"本页的主要内容"，站名、语言选择器、外链、
+    署名都不属于它，塞进去会让读屏软件的"跳到主内容"落在一堆导航上。
+  -->
+  <AppHeader />
   <main>
-    <LocaleSwitcher />
     <DataInitializer />
     <RouterView />
   </main>
+  <AppFooter />
 </template>
 
 <style scoped>
@@ -37,5 +48,10 @@ import LocaleSwitcher from './components/LocaleSwitcher.vue'
  */
 main {
   padding: 1rem;
+  /* body 是 flex 列（见 assets/base.css）：main 吃掉 header/footer 之外的
+     全部剩余高度，内容不足一屏时页脚才会被推到视口底部而不是浮在半空。
+     ⚠️ flex: 1 的 flex-basis 是 0%，纵向布局下这正是想要的；它不影响宽度
+     （容器 align-items 默认 stretch）。 */
+  flex: 1;
 }
 </style>

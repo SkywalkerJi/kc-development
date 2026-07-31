@@ -1,7 +1,9 @@
 import type { MsgKey } from '../types'
 
 export const ja: Record<MsgKey, string> = {
-  'title.app': '装備開発',
+  'title.app': '艦隊これくしょん 装備開発計算機',
+  'title.tagline': '資源から開発率を、装備からレシピを逆引き',
+  'meta.description': '艦隊これくしょんの装備開発計算機。秘書艦を選び、燃料・弾薬・鋼材・ボーキサイトを入力すると、各装備の開発率と最低資源が一覧で出ます。欲しい装備から使えるレシピを逆引きすることもできます。',
   'title.development': '装備開発',
   'error.initFailed': '装備開発データの読み込みに失敗しました。ページを再読み込みしてください。',
 
@@ -66,4 +68,11 @@ export const ja: Record<MsgKey, string> = {
   'locale.label': '言語',
   'locale.switchFailed': '言語の切り替えに失敗しました。現在の言語を維持します',
   'locale.retry': '再試行',
+
+  'link.github': 'GitHub でソースコードを見る',
+  'link.x': 'X で作者をフォロー',
+
+  'footer.credit': '訳名データは KC3Kai/kc3-translations（MIT ライセンス）より',
+  'footer.license': '本プロジェクトは GPL-3.0 で配布',
+  'footer.disclaimer': '非公式のファン制作物です。DMM GAMES／角川ゲームスとは関係ありません',
 }

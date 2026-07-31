@@ -12,16 +12,134 @@
 <html lang="zh-Hans">
   <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 与上面 <html lang="zh-Hans"> 同一个理由：首帧在 i18n 的 doSwitch() 把
-         document.title 改写成 t('title.app') 之前就已经渲染，这里给的必须是
-         zh-Hans 的值（src/i18n/messages/zh-Hans.ts 的 title.app），否则首帧
-         标签页标题会先闪一下这里的占位文字。 -->
-    <title>装备开发</title>
+
+    <!-- ===================================================================
+         下面整块 <meta> 都写死 zh-Hans 的文案，这不是漏了国际化。
+
+         社交平台的抓取器（X、Telegram、Discord、Facebook…）**不执行
+         JavaScript**：它们只解析这份静态 HTML，拿完 og:* 就走，页面挂载后
+         i18n 再怎么改写 DOM 它们都看不见。所以这些值必须在这里就是最终值，
+         而「最终值」只能有一份——与上面 <html lang> 同一个取舍，选默认语言
+         zh-Hans。
+
+         运行时切换语言仍然会改写 document.title 与 <meta name="description">
+         （src/i18n/index.ts 的 doSwitch），那是给**用户、以及会执行 JS 的
+         搜索引擎**看的；og:* 不跟着改，因为改了也没有任何抓取器会读到，
+         徒增一份要维护的运行时副作用。
+
+         另外刻意**没有**写 hreflang 备用链接：四种语言共用同一个 URL（语言
+         存在 localStorage 里，既不进路径也不进 query），而 hreflang 要求每
+         种语言各有一个可直接访问的地址——这里给不出来，写了就是假信息。
+         =================================================================== -->
+
+    <!-- 与 src/i18n/messages/zh-Hans.ts 的 title.app 逐字相同：首帧在 i18n 的
+         doSwitch() 把 document.title 改写成 t('title.app') 之前就已经渲染，
+         这里给的必须是 zh-Hans 的那个值，否则首帧标签页标题会先闪一下别的
+         文字。
+
+         ⚠️ 站名在**本文件里就有八份副本**（<title>、description、
+         og:site_name、og:title、og:description、og:image:alt、JSON-LD 的
+         name、noscript 的 h1），JSON-LD 的 alternateName 里还另有 ja 与
+         en 两份；这些全是静态
+         文本，没有任何测试或核验盯着它们。改站名前先读
+         docs/development.md 的「SEO」一节，那里列了必须同步的全部位置——
+         这里刻意不再重复一份清单，两处清单各自过时是这个仓库已经踩过的坑。 -->
+    <title>舰队 Collection 装备开发计算器</title>
+    <meta name="description" content="舰队 Collection 装备开发计算器：选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。支持简体中文、繁體中文、日本語、English。">
+    <meta name="author" content="SkywalkerJi">
+
+    <!-- 规范 URL / og:url / og:image 必须是**绝对**地址：抓取器拿到的只是
+         这份 HTML 的文本，不会替你解析相对路径。带尾斜杠、不带 hash——
+         路由用的是 createWebHashHistory，`#/` 之后的部分对抓取器没有意义，
+         写进去只会让同一个页面产生多个看起来不同的规范地址。 -->
+    <link rel="canonical" href="https://skywalkerji.github.io/kc-development-tools/">
+
+    <!-- %BASE_URL% 由 vite 在构建期替换成 vite.config.ts 里的 base
+         （生产是 /kc-development-tools/，开发是 /）。
+
+         ⚠️ 这里原本写的是 `/favicon.ico`，两个问题叠在一起：那个文件从来
+         就不存在，而且根绝对路径在 GitHub Pages **项目页**上会指到
+         skywalkerji.github.io/favicon.ico——那是用户根仓库的地盘，不是本
+         仓库。凡是指向自家静态资源的路径都要走 %BASE_URL%，不能写成 /。 -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg">
+    <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png">
+
+    <!-- 移动端浏览器地址栏配色，跟随系统深浅色（取值与 assets/base.css 里
+         两套令牌的页面底色一致，改一处要一起改） -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f7fa">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1a24">
+    <meta name="color-scheme" content="light dark">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="舰队 Collection 装备开发计算器">
+    <meta property="og:title" content="舰队 Collection 装备开发计算器">
+    <meta property="og:description" content="投入资源看出货率，选中装备反推配方。支持简体中文、繁體中文、日本語、English 的舰队 Collection 装备开发计算器。">
+    <meta property="og:url" content="https://skywalkerji.github.io/kc-development-tools/">
+    <!-- 1200×630 的 PNG，源文件是 scripts/assets/og-image.html，由
+         scripts/gen-assets.mjs 生成（改了源要重跑一次、把新 PNG 一起提交）。
+         必须是位图：X 不接受 SVG 作 og:image。 -->
+    <meta property="og:image" content="https://skywalkerji.github.io/kc-development-tools/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="舰队 Collection 装备开发计算器">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:locale:alternate" content="zh_TW">
+    <meta property="og:locale:alternate" content="ja_JP">
+    <meta property="og:locale:alternate" content="en_US">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@Skywalker_Ji">
+    <meta name="twitter:creator" content="@Skywalker_Ji">
+
+    <!-- 结构化数据。用 WebApplication 而不是 SoftwareApplication：这是个
+         打开就能用的网页工具，没有可下载安装的包。author.sameAs 把 GitHub
+         与 X 两个身份关联起来，是页脚那两个链接在机器可读一侧的对应物。 -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "舰队 Collection 装备开发计算器",
+      "alternateName": ["艦隊これくしょん 装備開発計算機", "KanColle Equipment Development Calculator"],
+      "url": "https://skywalkerji.github.io/kc-development-tools/",
+      "description": "选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。",
+      "image": "https://skywalkerji.github.io/kc-development-tools/og-image.png",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "isAccessibleForFree": true,
+      "inLanguage": ["zh-Hans", "zh-Hant", "ja", "en"],
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "codeRepository": "https://github.com/SkywalkerJi/kc-development-tools",
+      "author": {
+        "@type": "Person",
+        "name": "SkywalkerJi",
+        "url": "https://github.com/SkywalkerJi",
+        "sameAs": [
+          "https://github.com/SkywalkerJi",
+          "https://x.com/Skywalker_Ji"
+        ]
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <!-- 关掉 JS 时 #app 是个空 div，页面在视觉上与「加载失败」没有区别。
+         这段兜底同时也是静态 HTML 里唯一的正文内容，不执行 JS 的抓取器
+         能读到它。样式内联在这里而不是写进 base.css：base.css 由 main.ts
+         引入，而 main.ts 正是关掉 JS 时不会执行的那个文件。 -->
+    <noscript>
+      <div style="max-width:42rem;margin:4rem auto;padding:0 1.5rem;line-height:1.7;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif">
+        <h1 style="font-size:1.5rem">舰队 Collection 装备开发计算器</h1>
+        <p>选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。支持简体中文、繁體中文、日本語、English。</p>
+        <p><strong>这个工具需要 JavaScript 才能运行</strong>——全部计算都在浏览器本地完成，没有后端。请在浏览器设置里为本站启用 JavaScript 后刷新。</p>
+        <p>
+          <a href="https://github.com/SkywalkerJi/kc-development-tools">GitHub 仓库</a>　·
+          <a href="https://x.com/Skywalker_Ji">作者的 X</a>
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

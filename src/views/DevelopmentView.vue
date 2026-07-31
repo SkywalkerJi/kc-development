@@ -14,6 +14,18 @@
     <!-- 主要内容区域 -->
     <div v-else class="main-content">
       <div class="left-panel">
+        <!--
+          「秘书舰 + 资源」三块输入合成一张卡片。纯粹是视觉分组，没有改动
+          任何一个内部元素的结构、class 或 id——#poolSelect / #flagship /
+          #fuel… 以及 .secretary-select label / .field / .suggestions 这些
+          被单测与 scripts/verify-render.mjs 依赖的选择器全部原样保留。
+
+          ⚠️ 这个容器（以及它到 .suggestions 之间的任何祖先）**不能**加
+          overflow: hidden。秘书舰建议列表是 position: absolute 悬浮出来的，
+          一旦某个祖先裁剪溢出，下拉列表会被切掉大半（想要圆角就用
+          border-radius，它不需要配 overflow 也能裁掉自己的背景）。
+        -->
+        <div class="controls">
         <!-- 秘书舰类型选择 -->
         <div class="secretary-select">
           <label for="poolSelect">{{ $t('label.secretaryType') }}</label>
@@ -73,7 +85,9 @@
               @blur="normalizeResource(3)">
           </div>
         </div>
-        
+        </div>
+        <!-- /.controls -->
+
         <!-- 开发装备结果列表 -->
         <div class="equipment-list">
           <table>
@@ -196,7 +210,24 @@
         <!-- 可用公式区域 -->
         <div class="development-results">
           <h3>{{ $t('panel.recipes') }}</h3>
-          <table v-if="hasSelectedEquipments">
+          <!--
+            横向滚动容器。这张表有九列，右栏在 1024px 视口下只有约 525px，
+            英文列名（Bauxite / Pool Type / Fail Rate）根本压不进去——表格会
+            比容器宽。没有这一层时有两种结局，都不可接受：容器不裁剪则整个
+            页面出现横向滚动条（页头、左栏跟着一起跑出视口），容器一裁剪则
+            最后一列直接看不到、也够不着。
+            包一层专门负责横向滚动，表格保持自己的自然宽度，溢出的部分在这
+            一块之内滑动即可。
+
+            用 div 而不是给 <table> 自己设 overflow：overflow 作用在
+            display: table 的盒子上，各浏览器对"表格能否成为滚动容器"的处理
+            并不一致，包一层普通块级元素没有这个不确定性。
+
+            ⚠️ 这一层是**纯容器**：单测与 scripts/verify-render.mjs 用的都是
+            `.development-results thead th` / `tbody tr` 这类后代选择器，中间
+            多一层不影响它们。 -->
+          <div v-if="hasSelectedEquipments" class="table-scroll">
+          <table>
             <thead>
               <tr>
                 <th
@@ -230,6 +261,8 @@
               </tr>
             </tbody>
           </table>
+          </div>
+          <!-- /.table-scroll -->
         </div>
       </div>
     </div>
@@ -810,10 +843,30 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 </script>
 
 <style scoped>
+/*
+ * max-width 与 AppHeader 的 .app-header-inner、AppFooter 的
+ * .app-footer-inner 同为 1200px，三者左右边缘对齐；改一个要一起改。
+ */
 .development-view {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+}
+
+/*
+ * 区块标题。页头的 h1 是站名，这里的 h2 是页内那块功能区的名字，两者层级
+ * 不同（见 AppHeader.vue 里 h1 那段注释）。左侧一小段竖条是纯装饰，用
+ * border-left 而不是伪元素——少一个盒子，也不会在 flex/grid 里多出参与
+ * 布局的东西。
+ */
+.development-view > h2 {
+  margin: 0 0 20px;
+  padding-left: 10px;
+  border-left: 3px solid var(--c-accent);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--c-text);
 }
 
 /*
@@ -825,24 +878,49 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 
 .init-error {
   padding: 1rem;
-  background-color: #ffebeb;
-  border-radius: 4px;
-  color: #d9534f;
+  background-color: var(--c-danger-soft);
+  border: 1px solid var(--c-danger);
+  border-radius: var(--radius);
+  color: var(--c-danger);
 }
 
 .main-content {
   display: flex;
   gap: 20px;
+  /* align-items: flex-start —— 默认的 stretch 会把两栏拉成等高，右栏内容
+     短的时候底部会多出一大块空卡片。 */
+  align-items: flex-start;
 }
 
+/*
+ * min-width: 0 —— flex 项的默认最小尺寸是 auto（不小于内容的最小宽度），
+ * 表格里一旦出现放不下的长装备名，这一条会让 45%/55% 的分配悄悄失效、
+ * 把另一栏挤扁。显式归零后，超长内容改由各自表格内部消化。
+ */
 .left-panel {
   flex: 0 0 45%;
+  min-width: 0;
 }
 
 .right-panel {
   flex: 0 0 55%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/*
+ * 「秘书舰 + 资源」输入区的卡片。
+ * ⚠️ 不要在这里加 overflow: hidden，理由见模板里 .controls 那段注释
+ * （会裁掉秘书舰的悬浮建议列表）。
+ */
+.controls {
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  margin-bottom: 20px;
 }
 
 .secretary-select {
@@ -868,7 +946,9 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 .resource-inputs {
   display: flex;
   gap: 10px;
-  margin-bottom: 20px;
+  /* 最后一块，卡片自己的 padding 已经给了下边距，这里不再叠加 */
+  margin-bottom: 0;
+  flex-wrap: wrap;
 }
 
 .resource-group {
@@ -878,17 +958,34 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 
 .resource-group label {
   margin-bottom: 5px;
+  font-size: 0.85rem;
+  color: var(--c-text-muted);
 }
 
+/*
+ * box-sizing: border-box —— 这一条是随 base.css 给 input 加上边框/内边距
+ * 之后补的：默认的 content-box 下 width: 60px 只算内容区，四个输入框的实际
+ * 占位会比写的宽出 padding + border，四个加起来的误差足以在窄栏里挤出换行。
+ * 全局 box-sizing 重置刻意没做——那会连带改变 .equipment-list 图标列
+ * width: 48px 的解释方式，而那个值是照现状调出来的（见下面的注释）。
+ */
 .resource-group input {
-  width: 60px;
-  padding: 5px;
+  width: 64px;
+  padding: 5px 6px;
+  box-sizing: border-box;
+  /* 资源是数字，右对齐后四个框的个位数上下成列，扫一眼就能比大小 */
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .equipment-list {
   margin-top: 20px;
   /* max-height: 500px; */
   overflow-y: auto;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
 }
 
 .equipment-list table {
@@ -900,7 +997,20 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 .equipment-list td {
   padding: 8px;
   text-align: left;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.equipment-list thead th {
+  background-color: var(--c-surface-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+
+/* 最后一行不画分隔线，否则会与卡片自己的下边框叠成两条 */
+.equipment-list tbody tr:last-child td {
+  border-bottom: none;
 }
 
 /*
@@ -956,24 +1066,43 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 }
 
 .group-header {
-  background-color: #f0f0f0;
-  font-weight: bold;
+  background-color: var(--c-surface-2);
+  font-weight: 600;
+  font-size: 0.9em;
 }
 
+/*
+ * 四组行的区分刻意**不只靠颜色**：目标组额外有一条左侧强调边，两个"没出货"
+ * 的组靠文字变淡 + 目标组的粗体形成层次。只用颜色分组的话，色觉障碍用户
+ * （以及打印/高对比模式下）看到的就是四组一模一样的行。
+ */
 .target-equipment {
-  background-color: #e8f5e9;
+  background-color: var(--c-accent-soft);
+}
+
+.target-equipment td:first-child {
+  box-shadow: inset 3px 0 0 var(--c-accent);
 }
 
 .insufficient-equipment {
-  color: #777;
+  color: var(--c-text-muted);
 }
 
 .replaced-equipment {
-  color: #aaa;
+  color: var(--c-text-faint);
 }
 
 .equipment-filter {
   margin-bottom: 20px;
+}
+
+.equipment-filter h3,
+.development-results h3 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  letter-spacing: 0.02em;
 }
 
 .equipment-buttons {
@@ -982,7 +1111,10 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   gap: 10px;
   max-height: 300px;
   overflow-y: auto;
-  border: 1px solid #ddd;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background-color: var(--c-surface);
+  box-shadow: var(--shadow-sm);
   padding: 10px;
 }
 
@@ -991,22 +1123,30 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   flex-wrap: wrap;
   gap: 5px;
   padding-bottom: 10px;
-  border-bottom: 1px dashed #ddd;
+  border-bottom: 1px dashed var(--c-border);
 }
 
 .equipment-group:last-child {
   border-bottom: none;
+  padding-bottom: 0;
 }
 
 .equipment-buttons button {
   display: flex;
   align-items: center;
-  padding: 3px 5px;
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  border-radius: 3px;
+  padding: 3px 7px 3px 4px;
+  background-color: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
   cursor: pointer;
   font-size: 0.9em;
+  color: var(--c-text);
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.equipment-buttons button:hover:not(.disabled) {
+  background-color: var(--c-surface-3);
+  border-color: var(--c-border-strong);
 }
 
 .equipment-buttons button img {
@@ -1015,12 +1155,19 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   margin-right: 5px;
 }
 
+/*
+ * 选中态同样不只靠底色：加一圈实心的强调色描边。这些按钮是多选，用户需要
+ * 在几百个里一眼扫出自己点了哪几个，只换一点底色在滚动列表里很容易漏看。
+ */
 .equipment-buttons button.selected {
-  background-color: #e8f5e9;
+  background-color: var(--c-accent-soft);
+  border-color: var(--c-accent);
+  box-shadow: inset 0 0 0 1px var(--c-accent);
+  font-weight: 600;
 }
 
 .equipment-buttons button.disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -1028,16 +1175,57 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
   margin-top: 20px;
 }
 
+/*
+ * 卡片外观挂在滚动容器上而不是 <table> 上：边框与圆角要跟着"这一块"走，
+ * 表格本身可能比它宽（见模板里 .table-scroll 那段注释）。
+ * overflow-x: auto 顺带把内部单元格露在四个圆角上的直角裁掉了，不需要
+ * 另写 overflow: hidden。
+ *
+ * ⚠️ 这条 overflow 只作用于这一块，与 .controls 那边"不能加 overflow"的
+ * 警告不冲突：这里没有任何 position: absolute 的悬浮元素要溢出。
+ */
+.development-results .table-scroll {
+  overflow-x: auto;
+  background-color: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
 .development-results table {
   width: 100%;
   border-collapse: collapse;
+}
+
+/*
+ * 除第一列外全部不折行：那八列是数字或短词（油/弹/钢/铝/总资源/池类型/
+ * 出货率/失败率），折行只会让行高参差、数字上下对不齐。
+ *
+ * 第一列（秘书舰名）**刻意**留着可折行——它是最长的一列，英文下
+ * 「Torpedo - Escort Ships」这类名字如果也不折行，整张表的最小宽度会超过
+ * 右栏，1024px 视口下必须横向滚动才看得到最后两列。让它折成两行，表格就
+ * 直接放得下了；真放不下时外层 .table-scroll 仍然兜底。
+ */
+.development-results th + th,
+.development-results td + td {
+  white-space: nowrap;
 }
 
 .development-results th,
 .development-results td {
   padding: 8px;
   text-align: left;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--c-border);
+}
+
+/* 配方列表除了第一列（秘书舰）全是数字，等宽数字让各行的位数对齐，
+   扫一眼就能比出总资源/出货率的大小 */
+.development-results td + td {
+  font-variant-numeric: tabular-nums;
+}
+
+.development-results tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .development-results tbody tr {
@@ -1045,26 +1233,69 @@ function getEquipIcon(equip: Api_EquipInfo | undefined): string | undefined {
 }
 
 .development-results tbody tr:hover {
-  background-color: #f5f5f5;
+  background-color: var(--c-surface-2);
 }
 
 .development-results th.sortable {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  background-color: var(--c-surface-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--c-text-muted);
 }
 
 .development-results th.sortable:hover {
-  background-color: #f0f0f0;
+  background-color: var(--c-surface-3);
+  color: var(--c-text);
+}
+
+/* 当前排序列加深一档，配合表头文字后面那个 ▲/▼ 一起指示"按这列排的"。
+   aria-sort 是模板里已经写好的、给读屏用的同一份信息，这里是它的视觉对应物。 */
+.development-results th[aria-sort='ascending'],
+.development-results th[aria-sort='descending'] {
+  color: var(--c-accent);
 }
 
 .development-results tbody tr.result-selected {
-  background-color: #e8f4e8;
+  background-color: var(--c-accent-soft);
+}
+
+.development-results tbody tr.result-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--c-accent);
 }
 
 /* 行可聚焦（tabindex=0）后必须有可见的焦点指示，否则键盘用户看不到自己在哪 */
 .development-results tbody tr:focus-visible {
-  outline: 2px solid #4a90d9;
+  outline: 2px solid var(--c-accent);
   outline-offset: -2px;
+}
+
+/*
+ * 单栏断点。
+ *
+ * 取 900px 而不是别的值：两栏在 1024px 视口下的实测可用宽度（.left-panel
+ * 428px，见 assets/base.css 里 :lang(en) 那段记录的实测数字）已经是"英文
+ * 标签 + 300px 控件放不下、要换行"的边缘，再窄下去两栏都会开始互相挤。
+ * 900 让 1024 这一档仍然是两栏——scripts/verify-render.mjs 恰好在
+ * 1400/1024 两档做几何断言，那些数字都是照两栏布局量的，把断点设在 1024
+ * 及以上会让核验测的东西悄悄换成另一种布局。
+ */
+@media (max-width: 900px) {
+  .development-view {
+    padding: 14px;
+  }
+
+  .main-content {
+    flex-direction: column;
+  }
+
+  /* 单栏下 45%/55% 没有意义，两栏都占满 */
+  .left-panel,
+  .right-panel {
+    flex: 1 1 auto;
+    width: 100%;
+  }
 }
 </style> 

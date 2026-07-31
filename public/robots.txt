@@ -1,0 +1,17 @@
+# 允许全站抓取，并指出站点地图。
+#
+# ⚠️ 效力有限，别高估它：本站部署在 GitHub Pages 的**项目页**上
+# （https://skywalkerji.github.io/kc-development-tools/），而爬虫只读
+# **域名根**下的 https://skywalkerji.github.io/robots.txt —— 那个位置属于
+# 用户根仓库 skywalkerji.github.io，不是本仓库，这个文件放在子路径下爬虫
+# 不会去取。保留它的理由只有两条：一是各类 SEO 体检工具会去抓
+# <站点根>/robots.txt 并把 404 记成一条问题，二是万一将来换成自定义域名
+# （那时本仓库的产物就在域名根下了），这个文件立刻生效、不用再想起来补。
+#
+# 同理，下面这行 Sitemap 指令实际上也不会被读到；sitemap.xml 真正的用法是
+# 在 Google Search Console 里对这个子目录属性手动提交。
+
+User-agent: *
+Allow: /
+
+Sitemap: https://skywalkerji.github.io/kc-development-tools/sitemap.xml

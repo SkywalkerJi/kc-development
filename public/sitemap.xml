@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  只有一条 URL：路由用 createWebHashHistory，四种语言也共用同一个地址
+  （语言存在 localStorage 里），整站对搜索引擎而言就是这一个可索引页面。
+
+  刻意不写 <lastmod>：这个文件不参与构建、没有任何东西会自动更新它，
+  手写的日期只会在几次提交之后变成假信息——一个过期的 lastmod 比没有
+  lastmod 更糟，它会让爬虫按「早就没变过」来降低重访频率。
+  <changefreq>/<priority> 同样省略：主流搜索引擎早已不使用这两个字段。
+
+  用法见 robots.txt 里的说明：项目页下的 robots.txt 读不到，这份地图要在
+  Google Search Console 里对该子目录属性手动提交才有意义。
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://skywalkerji.github.io/kc-development-tools/</loc>
+  </url>
+</urlset>

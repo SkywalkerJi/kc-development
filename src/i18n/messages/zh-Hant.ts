@@ -1,7 +1,9 @@
 import type { MsgKey } from '../types'
 
 export const zhHant: Record<MsgKey, string> = {
-  'title.app': '裝備開發',
+  'title.app': '艦隊 Collection 裝備開發計算器',
+  'title.tagline': '投入資源看出貨率，選中裝備反推配方',
+  'meta.description': '艦隊 Collection 裝備開發計算器：選定秘書艦、填入油彈鋼鋁，逐件列出裝備的出貨率與最低資源需求；也可以反過來選中想要的裝備，反推出所有可用配方。',
   'title.development': '裝備開發',
   'error.initFailed': '裝備開發資料載入失敗，請重新整理頁面。',
 
@@ -66,4 +68,11 @@ export const zhHant: Record<MsgKey, string> = {
   'locale.label': '語言',
   'locale.switchFailed': '語言切換失敗，已保持目前語言',
   'locale.retry': '重試',
+
+  'link.github': '在 GitHub 上檢視原始碼',
+  'link.x': '在 X 上追蹤作者',
+
+  'footer.credit': '譯名資料來自 KC3Kai/kc3-translations（MIT 授權）',
+  'footer.license': '本專案以 GPL-3.0 發布',
+  'footer.disclaimer': '非官方粉絲作品，與 DMM GAMES / 角川遊戲無關',
 }

@@ -7,7 +7,28 @@
  * 真要改措辞，先确认没有测试依赖它，并在提交信息里写明。
  */
 export const zhHans = {
-  'title.app': '装备开发',
+  /**
+   * 站名。同时是 <title>（i18n 的 doSwitch 写 document.title）与页头 h1。
+   *
+   * 与 title.development 刻意不同：前者是「这个站是什么」，要带上足够的
+   * 关键词让搜索结果与分享卡片能读懂；后者是页内那块功能区的小标题，短
+   * 才对。两者都叫「装备开发」的时候，标签页标题里没有任何信息能说明这
+   * 是舰队 Collection 的工具。
+   *
+   * ⚠️ 改这个值要同步五处，少一处 `pnpm verify-render` 就报红：
+   * 四个 messages/*.ts + scripts/verify-render.mjs 的 EXPECTED.<locale>.title
+   * + index.html 的静态 <title>（首帧闪烁，见那里的注释）。
+   */
+  'title.app': '舰队 Collection 装备开发计算器',
+  /** 页头 h1 下面那行副标题，也是页面对自己的一句话说明。 */
+  'title.tagline': '投入资源看出货率，选中装备反推配方',
+  /**
+   * <meta name="description">。切换语言时由 doSwitch 改写（见
+   * src/i18n/index.ts）——这一条只对会执行 JS 的搜索引擎和读页面源码的人
+   * 有意义；不执行 JS 的社交抓取器读到的永远是 index.html 里那份静态
+   * zh-Hans 文案，理由见 index.html 里那段说明。
+   */
+  'meta.description': '舰队 Collection 装备开发计算器：选定秘书舰、填入油弹钢铝，逐件列出装备的出货率与最低资源要求；也可以反过来选中想要的装备，反推出所有可用配方。',
   'title.development': '装备开发',
   'error.initFailed': '装备开发数据加载失败，请刷新页面重试。',
 
@@ -72,4 +93,17 @@ export const zhHans = {
   'locale.label': '语言',
   'locale.switchFailed': '语言切换失败，已保持当前语言',
   'locale.retry': '重试',
+
+  // 页头两个外链的无障碍名称。链接本身只有一个图标，没有可见文字，
+  // 读屏软件念不出「GitHub」三个字——这两条就是它念出来的东西，同时
+  // 也是鼠标悬停时的 title 提示。
+  'link.github': '在 GitHub 上查看源码',
+  'link.x': '在 X 上关注作者',
+
+  // 页脚三行。footer.credit 整行是指向 kc3-translations 仓库的链接文字，
+  // 不拆成「前缀 + 专名 + 后缀」：那样每种语言的标点与语序都要单独拼，
+  // 而收益只是让链接短一点。
+  'footer.credit': '译名数据来自 KC3Kai/kc3-translations（MIT 许可）',
+  'footer.license': '本项目以 GPL-3.0 分发',
+  'footer.disclaimer': '非官方粉丝作品，与 DMM GAMES / 角川游戏无关',
 } as const

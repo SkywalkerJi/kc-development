@@ -659,7 +659,7 @@ const REQUIRED_BOXES = ['secretaryTypeLabel', 'secretarySelect', 'flagshipInput'
  */
 const EXPECTED = {
   'zh-Hans': {
-    title: '装备开发',
+    title: '舰队 Collection 装备开发计算器',
     labelSecretaryType: '秘书舰类型：',
     labelSecretary: '秘书舰',
     recipeTableHeaders: ['秘书舰', '油', '弹', '钢', '铝', '总资源', '池类型', '出货率', '失败率'],
@@ -671,7 +671,7 @@ const EXPECTED = {
     equipmentButtonSampleFirst: '12cm单装炮',
   },
   'zh-Hant': {
-    title: '裝備開發',
+    title: '艦隊 Collection 裝備開發計算器',
     labelSecretaryType: '秘書艦類型：',
     labelSecretary: '秘書艦',
     recipeTableHeaders: ['秘書艦', '油', '彈', '鋼', '鋁', '總資源', '池類型', '出貨率', '失敗率'],
@@ -683,7 +683,7 @@ const EXPECTED = {
     equipmentButtonSampleFirst: '12cm單裝炮',
   },
   ja: {
-    title: '装備開発',
+    title: '艦隊これくしょん 装備開発計算機',
     labelSecretaryType: '秘書艦タイプ：',
     labelSecretary: '秘書艦',
     recipeTableHeaders: ['秘書艦', '燃料', '弾薬', '鋼材', 'ボーキ', '総資源', 'プール種別', '開発率', '失敗率'],
@@ -695,7 +695,7 @@ const EXPECTED = {
     equipmentButtonSampleFirst: '12cm単装砲',
   },
   en: {
-    title: 'Equipment Development',
+    title: 'KanColle Equipment Development Calculator',
     labelSecretaryType: 'Secretary Ship Type:',
     labelSecretary: 'Secretary',
     recipeTableHeaders: ['Secretary', 'Fuel', 'Ammo', 'Steel', 'Bauxite', 'Total', 'Pool Type', 'Rate', 'Fail Rate'],
