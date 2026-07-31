@@ -1,24 +1,24 @@
 <template>
   <div class="flagship-search">
-    <label for="flagship">秘书舰</label>
+    <label for="flagship">{{ $t('label.secretary') }}</label>
     <input
       id="flagship"
       v-model="keyword"
       type="text"
-      placeholder="输入日文舰名或假名读音"
+      :placeholder="$t('search.placeholder')"
       autocomplete="off"
       @input="onInput"
     />
     <ul v-if="open && suggestions.length" class="suggestions">
       <li v-for="s in suggestions" :key="s.id" @click="choose(s.id)">
-        {{ s.name }}<span class="hint">（{{ s.yomi }}）</span>
+        {{ s.display }}<span class="hint">（{{ s.yomi }}）</span>
       </li>
     </ul>
     <p v-if="resolved" :class="{ matched: props.matched, mismatched: !props.matched }">
-      归属开发池：{{ resolved.poolName }}
-      <span v-if="!props.matched">（与当前所选池不一致）</span>
+      {{ $t('search.poolOf') }}{{ poolName(resolved.poolName) }}
+      <span v-if="!props.matched">{{ $t('search.mismatch') }}</span>
     </p>
-    <p v-else-if="keyword && !suggestions.length" class="miss">未找到该舰或它不属于任何开发池</p>
+    <p v-else-if="keyword && !suggestions.length" class="miss">{{ $t('search.notFound') }}</p>
   </div>
 </template>
 
@@ -27,6 +27,12 @@ import { ref, computed } from 'vue'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import { useStart2Store } from '@/stores/start2Store'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
+// 本地 import 而不是依赖 main.ts 里挂到 globalProperties 的那份：组件测试用
+// createApp(FlagshipSearch).mount() 直接挂载，不经过 main.ts，globalProperties
+// 上不会有 $t。script setup 顶层绑定会自动暴露给模板，重命名成 $t 后模板里
+// 的 {{ $t(...) }} 与 :placeholder="$t(...)" 两种写法都能解析到它——
+// 同 LocaleSwitcher.vue / DevelopmentView.vue 的做法。
+import { t as $t, shipName, poolName } from '@/i18n'
 
 const props = defineProps<{ matched: boolean }>()
 const emit = defineEmits<{ select: [payload: { pool: DevelopmentPoolClass; shipName: string }] }>()
@@ -56,16 +62,21 @@ function onInput() {
 const suggestions = computed(() => {
   const kw = keyword.value.trim()
   if (!kw) return []
-  const out: { id: number; name: string; yomi: string }[] = []
+  const out: { id: number; display: string; yomi: string }[] = []
   for (const [k, ship] of Object.entries(start2Store.shipList)) {
     const id = Number(k)
     if (id >= 1500) continue
     const yomi = ship.yomi ?? ''
-    // 舰名取自游戏原始数据，是日文汉字，项目里没有中文译名层 ——
-    // 简体输入「长门」搜不到「長門」，而「赤城」这类简繁同形的又能搜到，
-    // 这种半通不通比全搜不到更容易误导。假名读音是数据里真实存在的
-    // 第二匹配维度，一并纳入。
-    if (ship.name.includes(kw) || yomi.includes(kw)) out.push({ id, name: ship.name, yomi })
+    // 三个匹配维度：日文原名、假名读音、当前语言的译名（i18n.shipName，
+    // 查不到时回退日文原名）。
+    //
+    // 日文原名与假名读音**保留而不是被译名取代**：数据里两者都真实存在，
+    // 日文用户、以及习惯用原始日文名记舰船的玩家会直接照它们输入，把这两
+    // 条维度去掉对这部分用户是倒退。译名是新增的第三维，服务的是另一群
+    // 用户——不认识日文汉字、只认自己语言译名的人。三者取或，互不排斥。
+    const translated = shipName(id)
+    if (ship.name.includes(kw) || yomi.includes(kw) || translated.includes(kw))
+      out.push({ id, display: translated, yomi })
     if (out.length >= 12) break
   }
   return out
@@ -77,7 +88,7 @@ function choose(shipId: number) {
   if (!hit) { resolved.value = null; return }
   resolved.value = { poolName: hit.pool.开发池名称 }
   // 程序化赋值不触发 @input，所以这里不会把刚设好的 resolved 清掉
-  keyword.value = start2Store.shipList[shipId].name
+  keyword.value = shipName(shipId)
   emit('select', { pool: hit.pool, shipName: start2Store.shipList[shipId].name })
 }
 </script>
