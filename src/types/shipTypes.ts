@@ -172,4 +172,4 @@ export class Mst_Stype implements Api_Mst_Stype {
  * 只写不读，本项目没有任何消费者；而 Api_Mst_Equip_Ship 的声明形状
  * （api_equip_type: number[]）已被上游在 2026-07 改成对象映射，留着只会
  * 在换用新版 start2.json 时变成一处对不上事实的类型声明。
- */ 
+ */
