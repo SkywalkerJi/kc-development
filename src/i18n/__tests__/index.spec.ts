@@ -5,7 +5,7 @@ import { useStart2Store } from '@/stores/start2Store'
 import { useDevelopmentStore } from '@/stores/developmentStore'
 import {
   t, equipName, shipName, ctypeName, stypeName, setLocale, initLocale, currentLocale,
-  __resetI18nForTest,
+  localeSwitchFailed, localeSwitchFailedAttempt, __resetI18nForTest,
 } from '@/i18n'
 
 function mockFetchOk(tables: Record<string, unknown>) {
@@ -130,6 +130,53 @@ describe('i18n 门面', () => {
     // 冷启动前 localeRef 是默认值 zh-Hans；加载 en 失败，两者都不该变成 en。
     expect(currentLocale.value).toBe('zh-Hans')
     expect(document.documentElement.lang).toBe('zh-Hans')
+  })
+
+  // Fix B（headless-Chrome 复核发现）：initLocale 冷启动失败时，此前用户界面
+  // 上什么提示都看不到，也没有任何入口能重新触发那次失败的加载——不是因为
+  // setLocale 的短路条件挡住了重试（`next === localeRef.value && loaded.value`
+  // 在 loaded 为 false 时本就不短路），而是失败态从未被暴露到 doSwitch 之外，
+  // LocaleSwitcher 的错误横幅只在它自己发起的调用里赋值。这里覆盖完整链路：
+  // 冷启动失败 → 共享错误状态（localeSwitchFailed/localeSwitchFailedAttempt）
+  // 可见 → 用状态里记录的 target/persist 重试 → 成功后错误状态清空。
+  //
+  // 用 fetch 调用次数而不是"返回值为 true"来判定重试是否"真的"发生：若重试
+  // 被短路条件悄悄吃掉、直接回放上次的（失败）结果，返回值也可能凑巧看着
+  // 合理，只有调用次数能区分"真的又发了一轮请求"与"压根没发请求"。
+  it('initLocale 加载失败 → 错误可见 → 重试 → 成功后错误清空（且确认重试真的重新发起了请求）', async () => {
+    vi.stubGlobal('navigator', { languages: ['en'], language: 'en' })
+    let shouldFail = true
+    const fetchMock = vi.fn(async () =>
+      shouldFail
+        ? ({ ok: false, status: 500 } as unknown as Response)
+        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await initLocale()
+    expect(localeSwitchFailed.value).toBe(true)
+    // persist 原样保留成 initLocale 当初传入的 false —— 重试不该凭空变成
+    // "用户主动选择"。
+    expect(localeSwitchFailedAttempt.value).toEqual({ target: 'en', persist: false })
+    expect(currentLocale.value).toBe('zh-Hans') // 失败，仍停在冷启动前的默认语言
+    const callsAfterFailure = fetchMock.mock.calls.length
+    expect(callsAfterFailure).toBeGreaterThan(0)
+
+    // 重试：原样重放 localeSwitchFailedAttempt 记录的 target/persist，
+    // 与 LocaleSwitcher 的重试按钮（onRetry）走的是同一条路径。
+    shouldFail = false
+    const attempt = localeSwitchFailedAttempt.value!
+    const ok = await setLocale(attempt.target, attempt.persist)
+
+    expect(ok).toBe(true)
+    // 真的重新发起了一轮请求，不是被短路条件吞掉、直接回放旧结果。
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterFailure)
+    expect(localeSwitchFailed.value).toBe(false)
+    expect(localeSwitchFailedAttempt.value).toBeNull()
+    expect(currentLocale.value).toBe('en')
+    // persist 重放的是 false（initLocale 当初传入的值），重试成功也不该把
+    // 这次探测结果写进 localStorage——否则就是设计稿 §6 点名要避免的那个
+    // 退化："记住选择"变成"缓存探测结果"。
+    expect(localStorage.getItem('kc-development.locale')).toBeNull()
   })
 
   // Finding 3：ctypeName 没有"回退日文原名"这条路——ctypeMap／ctype 表本身

@@ -28,6 +28,43 @@ const pending = ref(false)
  */
 const loaded = ref(false)
 /**
+ * 最近一次切换尝试是否失败，供 UI 展示错误状态。
+ *
+ * 旧实现里"切换失败"这件事只被 LocaleSwitcher 组件自己知道——它在自己的
+ * onChange 里维护一个本地 `failed` ref，只在它自己发起的 setLocale 调用
+ * 失败时置位。initLocale 冷启动那次调用同样可能失败（見 doSwitch 的
+ * try/catch），但它的失败此前只 console.error，从不触碰那个本地 ref——
+ * 用户界面上不会出现任何提示，也没有任何入口可以重新触发那次失败的加载。
+ * 这里把"失败与否"提升成 i18n 模块自己的状态，doSwitch 是切换成功/失败
+ * 唯一的判定点，两条入口（initLocale、LocaleSwitcher 手动切换）殊途同归
+ * 都经过它，因此天然共享同一份状态，不需要每个调用方各自"喂"一遍。
+ *
+ * 因撞见并发 inflight 而直接判 false 的调用（见 setLocale 顶部 inflight
+ * 短路的注释）不动这两个 ref——那只是"这次没有真正发起加载"，不是一次
+ * 真实发生过的加载失败，不该覆盖上一次真实失败/成功的状态。
+ */
+const switchFailed = ref(false)
+/**
+ * 最近一次失败尝试的 `{ 目标语言, persist 参数 }`，供重试使用。两者都要
+ * 原样重放，缺一不可：
+ *
+ * - 目标语言不能假设等于 `currentLocale`——冷启动探测到 `ja` 但加载失败
+ *   时，`localeRef` 从未被写成 `ja`（doSwitch 失败分支走不到赋值那行），
+ *   `currentLocale` 仍停在初始默认值 `zh-Hans`。重试若无脑重试
+ *   `currentLocale`，会把用户/浏览器真正想要的 `ja` 静默换成 `zh-Hans`，
+ *   与用户点"重试"的意图不符。
+ * - `persist` 不能一律传 `true`：LocaleSwitcher 手动切换失败后的重试
+ *   理应写 localStorage（`persist` 默认就是 `true`），但 initLocale 冷
+ *   启动失败后的重试仍然属于"探测/沿用上次选择"这条路径，不是用户在
+ *   这一刻做出的新选择——若重试成功后仍然写 localStorage，就复现了
+ *   设计稿 §6 明确要避免的那个退化："记住选择"变成"缓存探测结果"：
+ *   一个从未手动选过语言的用户，只因为启动时凑巧失败又重试成功了一次，
+ *   浏览器语言就被永久写死进 localStorage，此后即使改了 navigator 语言，
+ *   应用也不会再跟着变。原样重放 `doSwitch` 当初收到的 `persist`，
+ *   这条路径的语义就跟"当初那次调用"完全一致，不需要重新判断一遍。
+ */
+const failedAttempt = ref<{ target: Locale; persist: boolean } | null>(null)
+/**
  * 进行中的切换请求：记录目标语言，以及那次真正执行加载的 promise。解决的
  * 是并发调用 setLocale 时"返回值必须诚实"这件事：
  * 1. 同目标的并发调用（比如语言选择器被手快点了两下）应该等同一次加载、
@@ -42,6 +79,14 @@ let inflight: { target: Locale; promise: Promise<boolean> } | null = null
 
 export const currentLocale = computed(() => localeRef.value)
 export const localePending = computed(() => pending.value)
+/** 最近一次切换尝试是否失败。见上面 `switchFailed` 的注释。 */
+export const localeSwitchFailed = computed(() => switchFailed.value)
+/**
+ * 最近一次失败尝试的 `{ 目标语言, persist }`，失败态下为非 null；成功一次
+ * 之后清空。重试（LocaleSwitcher 的重试按钮）据此重放，而不是猜测该重试
+ * 谁、该不该写 localStorage——见上面 `failedAttempt` 的注释。
+ */
+export const localeSwitchFailedAttempt = computed(() => failedAttempt.value)
 
 /** UI 文案。key 是字面量联合类型，拼错编译期就报错。 */
 export function t(key: MsgKey): string {
@@ -158,9 +203,19 @@ async function doSwitch(next: Locale, persist: boolean): Promise<boolean> {
     if (persist) {
       try { localStorage.setItem(STORAGE_KEY, next) } catch { /* 隐私模式下 setItem 会抛，不该因此切换失败 */ }
     }
+    // 成功了就清空上一次的失败记录——旧的失败横幅/重试目标不该在下一次
+    // 成功切换之后继续挂着。
+    switchFailed.value = false
+    failedAttempt.value = null
     return true
   } catch (e) {
     console.error('切换语言失败，保持当前语言:', e)
+    // 记录失败，供 UI（LocaleSwitcher）与重试逻辑读取——见上面 switchFailed
+    // / failedAttempt 两个 ref 的注释。这一行是本次修复的核心：此前失败
+    // 只有这一条 console.error，调用方（initLocale）连同它的返回值一起
+    // 被丢弃，用户界面上什么都看不见。
+    switchFailed.value = true
+    failedAttempt.value = { target: next, persist }
     return false
   }
 }
@@ -234,6 +289,14 @@ export async function initLocale(): Promise<void> {
   // 没变"不能当"已经加载过"的证据。该不该真的发请求由 setLocale 内部的
   // loaded 短路处理，这里无条件调用即可，不用再判断一次 want !== localeRef。
   // persist: false —— 见本函数顶部的说明，冷启动不写 localStorage。
+  //
+  // 这里的返回值仍然不接——但与旧版不同，「不接返回值」现在不等于「吞掉
+  // 失败」：doSwitch（setLocale 内部真正执行加载的那个函数）已经把成功/
+  // 失败一并写进了模块级的 switchFailed / failedAttempt，LocaleSwitcher
+  // 读那两个共享状态渲染错误提示、发起重试，不依赖这次调用点是否检查了
+  // 返回值。旧版的问题不是"没检查返回值"本身，是失败态压根没有任何地方
+  // 能被除了这次调用之外的代码观测到（当时只有 doSwitch 里那行
+  // console.error）。
   await setLocale(want, false)
 }
 
@@ -244,4 +307,6 @@ export function __resetI18nForTest(): void {
   pending.value = false
   loaded.value = false
   inflight = null
+  switchFailed.value = false
+  failedAttempt.value = null
 }

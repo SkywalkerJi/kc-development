@@ -65,4 +65,5 @@ export const ja: Record<MsgKey, string> = {
 
   'locale.label': '言語',
   'locale.switchFailed': '言語の切り替えに失敗しました。現在の言語を維持します',
+  'locale.retry': '再試行',
 }

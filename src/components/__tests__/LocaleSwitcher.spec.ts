@@ -83,9 +83,10 @@ describe('LocaleSwitcher', () => {
     expect(document.documentElement.lang).toBe('en')
     expect(select.value).toBe('en')
     expect(container!.querySelector('.switch-failed')).toBeNull()
+    expect(container!.querySelector('.switch-retry')).toBeNull()
   })
 
-  it('切换失败：显示失败提示文案，select 被拨回原语言，<html lang> 不变', async () => {
+  it('切换失败：显示失败提示文案与重试按钮，select 被拨回原语言，<html lang> 不变', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500 } as unknown as Response)))
     mount()
     const select = container!.querySelector('select') as HTMLSelectElement
@@ -94,9 +95,44 @@ describe('LocaleSwitcher', () => {
     await flush()
 
     expect(container!.querySelector('.switch-failed')?.textContent).toBe('语言切换失败，已保持当前语言')
+    expect(container!.querySelector('.switch-retry')?.textContent).toBe('重试')
     // onChange 失败分支手动把 DOM 属性拨回 currentLocale（zh-Hans）
     expect(select.value).toBe('zh-Hans')
     expect(document.documentElement.lang).toBe('zh-Hans')
+  })
+
+  // Fix B：验证重试按钮真的能让用户走出"下拉框拨不动"的死胡同。这里特意
+  // 让失败目标（en）与失败后 select 显示的值（zh-Hans，因为 onChange 把它
+  // 拨回了 currentLocale）不同——用点击按钮而不是"重新选中同一个下拉选项"
+  // 来触发重试，覆盖的正是原生 <select> 对"值没变"不派发 change 事件、
+  // 用户在下拉框里点不出任何变化的那种场景（另见 index.spec.ts 里
+  // "initLocale 加载失败 → 错误可见 → 重试 → 成功后错误清空" 一测，从
+  // i18n 模块状态而不是组件 DOM 的角度覆盖了同一条重试路径，并额外用请求
+  // 次数确认了重试确实重新发起了网络请求）。
+  it('点击重试按钮：失败后重试成功，横幅与按钮一起消失，select 落在重试的目标语言上', async () => {
+    let shouldFail = true
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      shouldFail
+        ? ({ ok: false, status: 500 } as unknown as Response)
+        : ({ ok: true, status: 200, json: async () => ({}) } as unknown as Response)))
+    mount()
+    const select = container!.querySelector('select') as HTMLSelectElement
+
+    select.value = 'en'
+    select.dispatchEvent(new Event('change'))
+    await flush()
+    expect(container!.querySelector('.switch-failed')).not.toBeNull()
+    const retryButton = container!.querySelector('.switch-retry') as HTMLButtonElement
+    expect(retryButton).not.toBeNull()
+
+    shouldFail = false
+    retryButton.click()
+    await flush()
+
+    expect(container!.querySelector('.switch-failed')).toBeNull()
+    expect(container!.querySelector('.switch-retry')).toBeNull()
+    expect(select.value).toBe('en')
+    expect(document.documentElement.lang).toBe('en')
   })
 
   // 上面两个用例各自独立，都没证明失败横幅会在后续一次成功切换时消失——

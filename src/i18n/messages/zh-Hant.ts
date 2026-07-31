@@ -65,4 +65,5 @@ export const zhHant: Record<MsgKey, string> = {
 
   'locale.label': '語言',
   'locale.switchFailed': '語言切換失敗，已保持目前語言',
+  'locale.retry': '重試',
 }

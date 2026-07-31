@@ -71,4 +71,5 @@ export const zhHans = {
 
   'locale.label': '语言',
   'locale.switchFailed': '语言切换失败，已保持当前语言',
+  'locale.retry': '重试',
 } as const

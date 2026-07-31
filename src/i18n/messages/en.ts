@@ -65,4 +65,5 @@ export const en: Record<MsgKey, string> = {
 
   'locale.label': 'Language',
   'locale.switchFailed': 'Failed to switch language; keeping the current one',
+  'locale.retry': 'Retry',
 }
