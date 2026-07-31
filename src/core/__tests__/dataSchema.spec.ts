@@ -124,14 +124,24 @@ describe('validateStart2Payload', () => {
     const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: undefined })] }
     const result = validateStart2Payload(bad)
     expect(result.ok).toBe(false)
-    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串）/)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
   })
 
   it('api_mst_stype 记录 api_name 为空字符串时拒绝（不只是缺失这一种"没有名字"）', () => {
     const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: '' })] }
     const result = validateStart2Payload(bad)
     expect(result.ok).toBe(false)
-    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串）/)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
+  })
+
+  // 本轮 Fix 6：只查 `=== ''` 曾经放过纯空白名字——'   ' 这种记录此前 ok:
+  // true，运行时渲染出一段空白而不是触发"查不到名字"的兜底。与
+  // src/i18n/names/load.ts 的 isValidNameTable 保持一致（同样用 trim()）。
+  it.each(['   ', '\t', '\n　'])('api_mst_stype 记录 api_name 为纯空白字符串 %p 时拒绝', (whitespaceName) => {
+    const bad = { ...validPayload(), api_mst_stype: [validStype({ api_name: whitespaceName })] }
+    const result = validateStart2Payload(bad)
+    expect(result.ok).toBe(false)
+    expect(result.errors.join('\n')).toMatch(/api_id=1 缺少 api_name（或为空字符串\/纯空白字符串）/)
   })
 
   it.each([0, -1, 1.5, '1', null])('api_mst_stype 记录 api_id=%p（非正整数）时拒绝', (badId) => {

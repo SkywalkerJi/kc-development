@@ -108,9 +108,14 @@ function isNumericArrayOfLength(v, len) {
  *    - api_broken 不是数组、长度不是 4、或含非数值元素
  *    - api_distance、api_cost：可选，存在时必须是有限数值
  * 5. api_mst_stype 的每一项：api_id 缺失、不是正整数、或重复，api_equip_type
- *    缺失/不是对象，api_name 缺失、不是字符串、或是空字符串（i18n 的
- *    stypeName() ja 分支读它，见上面的 ⚠️——空字符串与缺失是同一种故障：
- *    both 都会让这个舰种在 ja 下没有可用的日文名）。整张表还必须覆盖
+ *    缺失/不是对象，api_name 缺失、不是字符串、或去空白后是空字符串（i18n
+ *    的 stypeName() ja 分支读它，见上面的 ⚠️——空字符串、纯空白字符串、
+ *    缺失是同一种故障：三者都会让这个舰种在 ja 下没有可用的日文名，纯
+ *    空白不比空字符串更"有名字"，只是肉眼在 UI 上不容易一眼看出区别，
+ *    渲染出来是一段空白而不是明确的缺失提示）。这里的 `trim()` 判断与
+ *    src/i18n/names/load.ts 的 `isValidNameTable`（同一轮之前就已经这样
+ *    要求名称表里的每个值）保持一致，两处都是"名字最终会被直接渲染给
+ *    用户"这同一个约束的两个入口。整张表还必须覆盖
  *    REQUIRED_STYPE_IDS 里列的 20 个 id——只要求"非空数组"不够，一条
  *    记录的表（比如只剩 DD）一样能通过"非空"，但绝大多数舰种在 ja 下仍然
  *    会查不到名字，与空数组是同一类故障、只是没那么彻底。
@@ -233,9 +238,13 @@ export function validateStart2Payload(json) {
     const tag = isPositiveInteger(id) ? `api_id=${id}` : label
     if (!isPlainObject(item.api_equip_type)) errors.push(`${tag} 缺少 api_equip_type`)
     // api_name 是 i18n 的 stypeName() ja 分支唯一的日文舰种名来源（见本
-    // 函数顶部 JSDoc 的 ⚠️），从"未校验字段"提升为必须存在、非空的字符串。
-    if (typeof item.api_name !== 'string' || item.api_name === '') {
-      errors.push(`${tag} 缺少 api_name（或为空字符串）`)
+    // 函数顶部 JSDoc 的 ⚠️），从"未校验字段"提升为必须存在、非空（去掉首尾
+    // 空白后仍非空）的字符串——只查 `=== ''` 会放过 '   ' 这类纯空白名字：
+    // 那样的记录一样能通过校验，运行时渲染出来是一段空白，而不是明确触发
+    // "查不到名字、回退到 stype 代码"这条兜底路径，对用户来说比回退更差
+    // （回退好歹是个能读的代码如 'DD'，空白连"这里缺了什么"都看不出来）。
+    if (typeof item.api_name !== 'string' || item.api_name.trim() === '') {
+      errors.push(`${tag} 缺少 api_name（或为空字符串/纯空白字符串）`)
     }
   })
 
