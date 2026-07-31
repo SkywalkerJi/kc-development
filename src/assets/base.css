@@ -57,10 +57,11 @@
  *
  * ⚠️ :lang(en) 的字体栈末尾额外挂了一段日文 CJK 族，这不是笔误。
  *
- * 真正的理由：PoolDescriptor.shipNames（src/core/poolDescriptor.ts:34-35，
- * 原样拼进展示串，见同文件 :76）在**任何语言下都是日文舰名**——它是身份键，
- * 不经过 equipName/shipName 那条"查不到就回退日文原名"的路径，是压根不翻译
- * （原因见 poolDescriptor.ts 里 shipNames 字段自己的注释）。45 个可在下拉框
+ * 真正的理由：PoolDescriptor.shipNames（src/core/poolDescriptor.ts 的
+ * shipNames 字段，由 formatPoolDescriptor() 原样拼进展示串）在**任何语言
+ * 下都是日文舰名**——它是身份键，不经过 src/i18n/index.ts 的 equipName/
+ * shipName 那条"查不到就回退日文原名"的路径，是压根不翻译（原因见
+ * poolDescriptor.ts 里 shipNames 字段自己的注释）。45 个可在下拉框
  * 选中的开发池（开发池ID≥0 且无最低资源门槛，按名去重——DevelopmentPool.json
  * 里共 46 个开发池名，唯一选不到的「空母系-陆攻」靠负 ID + 资源门槛常驻生效，
  * 不出现在下拉框）里，有 11 个的筛选条件带着 CJK 汉字舰名：「水雷系-川内改二」
@@ -69,10 +70,11 @@
  * 这 11 个选项在没装日文字体的系统上会直接变成方块（tofu）。
  *
  * 次要、且目前用不上的理由：ctype 表在 sync-i18n 生成 en 表时，查不到译名
- * 的条目按设计直接回填日文原文（同文件 ctypeName 的注释；实测 en/ctype.json
- * 141 条里有 18 条与 ja/ctype.json 逐字相同）。这条路径结构上存在，但
- * DevelopmentPool.json 实际引用的 12 个 ctype ID 没有一个落在这 18 条回填
- * 里——今天的池数据走不到它，只有将来新增引用这些条目的池才会触发。
+ * 的条目按设计直接回填日文原文（src/i18n/index.ts 的 ctypeName 注释；实测
+ * en/ctype.json 141 条里有 18 条与 ja/ctype.json 逐字相同）。这条路径结构
+ * 上存在，但 DevelopmentPool.json 实际引用的 12 个 ctype ID 没有一个落在
+ * 这 18 条回填里——今天的池数据走不到它，只有将来新增引用这些条目的池
+ * 才会触发。
  *
  * （这里曾经写过"KC3 的装备表本身缺 4 条译名"，那是错的：缺的是 zh-Hans 的
  * items.json——id 254–257，F6F-3N/F6F-5N/TBF/TBM-3D，且都是拉丁名，与 en
