@@ -423,6 +423,15 @@ describe('DevelopmentView — 「可用公式」的选中语义', () => {
     expect(rows[1].classList.contains('result-selected')).toBe(false)
     // 抬油那条：[30,30,10,30]
     expect(container!.querySelector<HTMLInputElement>('#fuel')!.value).toBe('30')
+
+    // 「池类型」列（RESULT_COLUMNS 第 7 个，index 6）渲染的是
+    // t(poolTypeLabel(r.池ID)) 这个组合的结果，不是 poolTypeLabel 单独返回的
+    // key。beforeEach 里的池是 开发池ID: 3（油钢池），两条候选配方都来自它，
+    // 所以两行都应该渲染成 zh-Hans 下的原词「油钢」。只测 poolTypeLabel 返回
+    // 的 key 对不对（smoke.spec.ts）测不到这一层组合——把 key 传错、或者漏包
+    // 一层 t()，这里才会红。
+    expect(rows[0].querySelectorAll('td')[6].textContent).toBe('油钢')
+    expect(rows[1].querySelectorAll('td')[6].textContent).toBe('油钢')
   })
 
   it('再次点击已选中的行不会覆盖用户手工输入的资源值', async () => {
