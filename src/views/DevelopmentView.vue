@@ -243,6 +243,7 @@ import FlagshipSearch from '@/components/FlagshipSearch.vue'
 import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
+import { t } from '@/i18n'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
 import { formatRateDetail, sortEquipIds, groupEquipmentsWithVisibility } from '@/core/grouping'
@@ -332,7 +333,7 @@ const RESULT_COLUMNS: ResultColumn[] = [
   { key: 'total', label: '总资源', value: (r) => r.总资源, display: (r) => String(r.总资源) },
   {
     key: 'type', label: '池类型',
-    value: (r) => poolTypeLabel(r.池ID), display: (r) => poolTypeLabel(r.池ID),
+    value: (r) => t(poolTypeLabel(r.池ID)), display: (r) => t(poolTypeLabel(r.池ID)),
   },
   { key: 'hit', label: '出货率', value: (r) => r.出货率, display: (r) => `${r.出货率}%` },
   { key: 'fail', label: '失败率', value: (r) => r.失败率, display: (r) => `${r.失败率}%` },
