@@ -107,7 +107,12 @@ describe('i18n 门面', () => {
     })
 
     it('navigator.languages 探测不出任何已知语言，兜底 zh-Hans', async () => {
-      vi.stubGlobal('navigator', { languages: ['xx-YY'], language: 'xx-YY' })
+      // 'x-testing' 是 BCP 47 的 private-use 单例子标签（主语言部分只有一个
+      // 字母 'x'），语法上就不是个合法的语言子标签，detectLocale 识别不出。
+      // 不能再用 'xx-YY'：Fix A（src/i18n/detect.ts）把「是否识别到了」的
+      // 判断从白名单换成了纯语法校验，'xx' 满足「2-3 个字母」的形状，
+      // 会被当成识别到了、直接归英文，这个用例就名不副实了。
+      vi.stubGlobal('navigator', { languages: ['x-testing'], language: 'x-testing' })
       stubZhHansFetch()
       await initLocale()
       expect(currentLocale.value).toBe('zh-Hans')
