@@ -46,7 +46,24 @@ export function validate(produced, refs) {
   // 校验 3（自校验）：zh-Hans 用 scn 数据派生出的舰级名，必须与既有 ctype.json
   // 在两者都有的键上逐字相同。这只验证「派生算法在 zh-Hans 上算得对不对」，
   // 不验证覆盖率——覆盖率是校验 4 里 zh-Hans 那一条分支单独负责的事，两者不能互相替代。
+  //
+  // 但"覆盖率"在这里还有一层更窄、专属于自校验本身的含义：下面的逐字比对
+  // 只看 derivedCtype 里**已经存在**的键，天然不会对"开发池引用的某个舰级
+  // 干脆没有出现在 derivedCtype 里"这件事报错——把这个键从 derivedCtype
+  // 删掉（派生算法对它失败、或调用方漏喂），只要它仍然留在 ctypeZhHans
+  // 里，`Object.entries(derivedCtype)` 根本不会遍历到它，逐字比对因此
+  // 全程不touch这个键，校验 3 对它形同空转。这不是"覆盖率校验 4 的职责"
+  // 能顶上的空缺：校验 4 的 zh-Hans 分支查的是 `ctypeZhHans[id]` 是否
+  // truthy（既有数据文件里有没有这一条），与"这次派生算法是否真的算出了
+  // 这一条、可供逐字比对"是两个不同的问题，一个查"文件里有没有"，一个查
+  // "刚跑的算法有没有覆盖到"。所以在逐字比对之前，先单独断言 refCtypeIds
+  // 里的每一个 ID 都必须出现在 derivedCtype 里，覆盖率缺口在这里就报错，
+  // 不留给下面的比对静默放过。
   const derivedCtype = produced['zh-Hans'].derivedCtype ?? {}
+  const notDerived = refCtypeIds.filter((id) => derivedCtype[id] == null)
+  if (notDerived.length) {
+    errors.push(`[自校验] 开发池引用的舰级未被派生算法覆盖，derivedCtype 里没有这些 ID，无法自校验：${notDerived.join(', ')}`)
+  }
   const mismatch = Object.entries(derivedCtype).filter(([k, v]) => v != null && ctypeZhHans[k] && ctypeZhHans[k] !== v)
   if (mismatch.length) {
     errors.push(`[自校验] 派生的简中舰级名与 ctype.json 不一致 ${mismatch.length} 条：` +

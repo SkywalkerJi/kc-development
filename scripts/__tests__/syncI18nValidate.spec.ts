@@ -66,6 +66,20 @@ describe('syncI18nValidate.validate', () => {
     expect(errors.some((e) => e.startsWith('[自校验]') && e.includes('派生=丙型') && e.includes('现有=乙型'))).toBe(true)
   })
 
+  it('校验 3（自校验，失败态用例）：referenced ctype id 从 derivedCtype 里被拿掉、但仍留在 ctype.json 里时必须报错——不能被"两边比对时这个键干脆没被遍历到"悄悄放过', () => {
+    const produced = validProduced({
+      // 6 号从 derivedCtype 里删掉，但 ctypeZhHans（既有 ctype.json）里
+      // 依然有 6 号——旧版校验 3 只遍历 derivedCtype 的键做逐字比对，
+      // 这种"某个引用到的 ID 干脆不在 derivedCtype 里"的情况不会进入比对，
+      // validate() 因此照旧返回 []。
+      'zh-Hans': { ...validProduced()['zh-Hans'], derivedCtype: { '5': '甲型' } },
+    })
+    const errors = validate(produced, validRefs())
+    expect(errors.some((e) => e.startsWith('[自校验]') && e.includes('未被派生算法覆盖') && e.includes('6'))).toBe(true)
+    // 5 号仍在 derivedCtype 里且与 ctypeZhHans 一致，不该被这条新校验误伤
+    expect(errors.some((e) => e.startsWith('[自校验]') && e.includes('未被派生算法覆盖') && e.includes('5'))).toBe(false)
+  })
+
   it('校验 4：ja/zh-Hant/en 产出的 ctype 表缺开发池引用的舰级时报错', () => {
     const produced = validProduced({
       'zh-Hant': { ...validProduced()['zh-Hant'], ctype: { '5': '甲型' } }, // 丢了 6 号舰级
