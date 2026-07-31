@@ -63,6 +63,15 @@ export interface PoolDescriptor {
    * 当前 start2.json 里精确匹配到（游戏更新、改名、数据源不同步都可能让
    * 某条查不到）——formatPoolDescriptor 在这种情况下回退渲染 shipNames
    * 原文，不是遗漏而是刻意的兜底，见该函数实现。
+   *
+   * 【已知限制：同名多舰只取第一个】exact=true 命中多个 ID 时，
+   * developmentPool.ts 里只取 `getIDs([name], true)[0]`，不保证是"语义上
+   * 更对"的那个（取决于 shipList 的迭代顺序）。真实数据里存在同名例子——
+   * 「宗谷」在 start2.json 里对应三个不同 ID（645/650/699，harness 实测
+   * 的 ja secretaryOptions 里能看到这三条都是独立池，用的是 舰ID 直接
+   * 指定、不是 舰名 筛选）。今天没有任何池用 `舰名: ["宗谷"]` 触发这个
+   * 分支，所以不是一个已确认会产出错误结果的 bug，但如果将来出现这种池，
+   * 这里会静默选中三者之一，不会报错。
    */
   shipNameIds: (number | null)[]
   excludeShipIds: number[]
