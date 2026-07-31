@@ -15,33 +15,35 @@ import { LOCALES, type Locale } from './types'
  * 裸 `zh` 归简体是有意的默认：不带地区的 `zh` 在现实中绝大多数来自简体环境。
  * 逐个标签往后找而不是只看第一个 —— 用户把英文排在母语前面是常见配置。
  */
+// 先解析出 BCP 47 主语言子标签（2-3 个 ASCII 字母，后面必须紧跟结束，或
+// 紧跟 '-' + 至少一个字母/数字开头的后续内容——单独一个尾随连字符，如
+// 'en-'，不构成"后面还有子标签"，不能算合法），再基于这个解析结果分支，
+// 不能反过来对整条标签做 `startsWith` 前缀匹配：'ja'/'zh' 只是很多合法
+// 三字母语言码的前缀而已——'jam'（Jamaican Creole）会被 `startsWith('ja')`
+// 命中误判成日文，'zha'（壮语）会被 `startsWith('zh')` 命中误判成简体中文，
+// 两者都是真实存在的 ISO 639-3 代码，不是构造出来的边界情况。
+//
+// 只做语法校验，不做语义（真实语言注册表）校验：不检查解析出的主语言子
+// 标签是否在某张语言名单里。语法合法但查无此语言（如 'xx'、'qqq' 这类
+// 不存在的代码）会被判成「识别到了」归入英文，而不是继续找下一个标签——
+// 这是有意的：本函数的职责是「像不像一个语言标签」，不是对着 ISO 639 表
+// 逐条核实，后者需要联网或打包一份语言注册表，成本与收益不成比例；对着
+// 不存在的语言码归成英文，后果远比把 ar-SA/hi-IN 这类真实语言误判成简体
+// 中文轻。
+const PRIMARY_SUBTAG = /^([a-z]{2,3})(?:-[a-z0-9].*)?$/
+
 export function detectLocale(tags: readonly string[]): Locale {
   for (const raw of tags) {
     const tag = raw.toLowerCase()
-    if (tag.startsWith('zh')) {
+    const m = PRIMARY_SUBTAG.exec(tag)
+    if (!m) continue // 语法不合法（形状不对，或像 'en-' 这样缺了尾随子标签的残标签）：跳过，继续找下一个
+    const primary = m[1]
+    if (primary === 'zh') {
       if (/^zh-(tw|hk|mo)\b/.test(tag) || tag.startsWith('zh-hant')) return 'zh-Hant'
       return 'zh-Hans'
     }
-    if (tag.startsWith('ja')) return 'ja'
-    // 语法校验，不是语义（真实语言）校验：只要求「2-3 个 ASCII 字母，后面
-    // 跟 '-' 或结束」这个 BCP 47 主语言子标签的形状，不检查它是否在某张
-    // 语言名单里。
-    //
-    // 这里原先是 `... && KNOWN_PREFIXES.has(tag.slice(0, 2))`——一份仅 15
-    // 个前缀的白名单，凡是不在表内的标签（哪怕是完全合法、常见的语言，如
-    // ar-SA、hi-IN、he-IL、sv-SE、cs-CZ，以及三字母的 fil-PH——`tag.slice(0,
-    // 2)` 对三字母代码取的还是错的两位）都会跌出循环、落到最后 `return
-    // 'zh-Hans'` 这行，把说这些语言的用户全部错判成简体中文用户。设计稿
-    // §6 的规则是「其他任何标签 → 英文」——「任何」，不是「白名单里的那几
-    // 个」；zh-Hans 只该是空列表 / 全部不合法时的最后兜底，不该是「合法但
-    // 没被本仓库特意列出来」的默认去处。
-    //
-    // 语法合法但查无此语言（如 'xx'、'qqq' 这类不存在的代码）也会被这条
-    // 判成「识别到了」归入英文，而不是继续找下一个标签——这同样是有意的：
-    // 本函数的职责是「像不像一个语言标签」，不是对着 ISO 639 表逐条核实，
-    // 后者需要联网或打包一份语言注册表，成本与收益不成比例；对着不存在的
-    // 语言码归成英文，后果远比把 ar-SA/hi-IN 这类真实语言误判成简体中文轻。
-    if (/^[a-z]{2,3}(-|$)/.test(tag)) return 'en'
+    if (primary === 'ja') return 'ja'
+    return 'en'
   }
   return 'zh-Hans'
 }

@@ -13,8 +13,16 @@ describe('detectLocale', () => {
     // 查的也是 'fi'。
     [['ar-SA'], 'en'], [['hi-IN'], 'en'], [['he-IL'], 'en'], [['sv-SE'], 'en'], [['cs-CZ'], 'en'],
     [['fil-PH'], 'en'],
+    // 回归：主语言子标签解析要先做，不能用 startsWith 前缀匹配整条标签。
+    // 'jam'（Jamaican Creole）、'zha'（壮语）都是真实的 ISO 639-3 三字母
+    // 代码，恰好以 'ja'/'zh' 开头——旧写法会把它们分别误判成日文/简体中文。
+    [['jam'], 'en'], [['zha'], 'en'],
   ])('%j → %s', (tags, expected) => {
     expect(detectLocale(tags)).toBe(expected)
+  })
+
+  it('尾随连字符的残标签（如 en-）不合法，不会截断扫描——继续找到后面合法的 ja-JP', () => {
+    expect(detectLocale(['en-', 'ja-JP'])).toBe('ja')
   })
 
   it('取第一个能识别的标签，而不是第一个标签', () => {
