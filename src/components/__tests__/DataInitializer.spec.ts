@@ -13,19 +13,24 @@
 // 覆盖边界：不陪跑 onMounted 里 start2Store/developmentStore 两层 try/catch
 // 的每一条分支排列组合——那部分控制流是既有逻辑，本任务未改动其结构，只
 // 改了文案来源。这里挑了三条路径：正常加载中、外层 catch 的 error.unknown
-// 兜底、内层 devResult.success===false 的 error.poolLoadFailed 兜底。
+// 兜底、内层 devResult.success===false 的 error.poolLoadError 兜底。
 //
-// error.poolLoadException（devError 那层 catch）没有单独起用例：不是"机制
+// error.poolLoadFailed（devError 那层 catch）没有单独起用例：不是"机制
 // 已被别的用例覆盖过、懒得重复"，是这条分支在当前 store 实现下本来就打不到
 // ——developmentStore.initializeData() 内部把所有失败都 try/catch 转成
 // `{ success: false, error }` 正常返回，从不 reject（对照 start2Store：它的
 // initializeData 在 .catch 里是 `throw e` 重新抛出，真的会 reject，所以
 // 外层 catch 那条路径能测）。想让 devError 分支触发，得让
 // developmentStore.initializeData() 本身抛出/拒绝，而它的实现决定了这在不
-// 改 store 代码的前提下做不到。error.poolLoadException 因此是一个仅为与
-// error.poolLoadFailed 对称而加的防御性兜底，翻译机制（fragmentFromCaught +
+// 改 store 代码的前提下做不到。error.poolLoadFailed 因此是一个仅为与
+// error.poolLoadError 对称而加的防御性兜底，翻译机制（fragmentFromCaught +
 // errorMessage computed）已经被 error.unknown 那条用例证明过，这里不再为
 // 一条无法触发的分支硬凑用例。
+//
+// （注：这两个消息 key 在任务 10 里改过名——原先分别叫 poolLoadFailed /
+// poolLoadException，名字与各自的文案内容（"加载错误" vs "加载失败"）正好
+// 对不上；重命名后 poolLoadError 对应"错误"文案，poolLoadFailed 对应"失败"
+// 文案，值本身逐字未变，见 i18n/messages/*.ts。）
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 import type { App } from 'vue'
@@ -153,7 +158,7 @@ describe('DataInitializer', () => {
 
   // 复现审查 Finding 2：`开发池数据加载错误` 这条兜底文案改造前完全没有
   // 对应的消息 key（不是"存了字符串"这种半吊子翻译，是压根没翻译），任何
-  // 非 zh-Hans 用户看到的都是硬编码中文。现在它经由 error.poolLoadFailed
+  // 非 zh-Hans 用户看到的都是硬编码中文。现在它经由 error.poolLoadError
   // 走消息表，这里验证挂载后切语言也会重新翻译。
   //
   // 触发路径：devResult.success === false 且 devResult.error 为 null（没有
@@ -161,7 +166,7 @@ describe('DataInitializer', () => {
   // 分支在生产代码里理论上不可达（developmentStore 的失败一律 throw new
   // Error(...)，devResult.error 实际总有 message），但类型上合法，且正是
   // 这个防御性兜底本身需要被测到。
-  it('开发池数据加载失败且无可用 message：error.poolLoadFailed 兜底文案挂载后切语言会重新翻译', async () => {
+  it('开发池数据加载失败且无可用 message：error.poolLoadError 兜底文案挂载后切语言会重新翻译', async () => {
     vi.spyOn(useStart2Store(), 'initializeData').mockResolvedValue({ success: true, error: null })
     vi.spyOn(useDevelopmentStore(), 'initializeData').mockResolvedValue({ success: false, error: null })
     vi.stubGlobal('fetch', mockFetchOk({

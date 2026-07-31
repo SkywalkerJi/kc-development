@@ -128,7 +128,7 @@ onMounted(async () => {
           hasErrors.value = true
           errorFragments.value = [
             ...errorFragments.value,
-            fragmentFromStoreError(devResult.error, 'error.poolLoadFailed'),
+            fragmentFromStoreError(devResult.error, 'error.poolLoadError'),
           ]
         }
       } catch (devError) {
@@ -136,7 +136,7 @@ onMounted(async () => {
         hasErrors.value = true
         errorFragments.value = [
           ...errorFragments.value,
-          fragmentFromCaught(devError, 'error.poolLoadException'),
+          fragmentFromCaught(devError, 'error.poolLoadFailed'),
         ]
         loadingSteps.value[2].completed = false
       }

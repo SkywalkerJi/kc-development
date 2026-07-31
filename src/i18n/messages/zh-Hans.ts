@@ -65,8 +65,8 @@ export const zhHans = {
 
   'error.title': '错误详情:',
   'error.unknown': '未知错误',
-  'error.poolLoadFailed': '开发池数据加载错误',
-  'error.poolLoadException': '开发池数据加载失败',
+  'error.poolLoadError': '开发池数据加载错误',
+  'error.poolLoadFailed': '开发池数据加载失败',
 
   'locale.label': '语言',
   'locale.switchFailed': '语言切换失败，已保持当前语言',

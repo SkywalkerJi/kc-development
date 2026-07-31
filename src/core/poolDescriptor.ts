@@ -1,3 +1,22 @@
+import type { MsgKey } from '@/i18n/types'
+
+/**
+ * formatPoolDescriptor 会用到的消息 key 子集。
+ *
+ * 只列 core/poolDescriptor.ts 内部硬编码用到的那几个字面量，不是完整的
+ * MsgKey——收窄到这个子集，DescriptorCtx.t 才能在编译期拒绝拼错的 key
+ * （比如 'desc.minFule'），而不是像 `(key: string) => string` 那样，
+ * 任何字符串都能通过类型检查、拼错的 key 到运行时才现形成 undefined。
+ *
+ * 用 `import type` 引 @/i18n/types 而不是运行时 import：core 层因此仍不
+ * 依赖 i18n 模块本身（类型位置的引用编译后完全擦除），只是共享了字面量
+ * 联合类型的定义处，参见 src/core/types.ts 里 MsgKey 的同一处理方式。
+ */
+type DescMsgKey = Extract<
+  MsgKey,
+  'desc.exclude' | 'desc.minFuel' | 'desc.minAmmo' | 'desc.minSteel' | 'desc.minBauxite' | 'desc.invalid'
+>
+
 /**
  * 开发池的筛选条件描述。
  *
@@ -27,7 +46,7 @@ export interface PoolDescriptor {
 
 /** 名称查询以参数注入，而不是 import i18n —— core 层保持无状态、可直接单测。 */
 export interface DescriptorCtx {
-  t: (key: string) => string
+  t: (key: DescMsgKey) => string
   shipName: (id: number) => string
   ctypeName: (id: number) => string
   stypeName: (code: string) => string
@@ -69,7 +88,7 @@ export function formatPoolDescriptor(d: PoolDescriptor, ctx: DescriptorCtx): str
   }
 
   if (d.minResources) {
-    const keys = ['desc.minFuel', 'desc.minAmmo', 'desc.minSteel', 'desc.minBauxite']
+    const keys = ['desc.minFuel', 'desc.minAmmo', 'desc.minSteel', 'desc.minBauxite'] as const
     for (let i = 0; i < 4; i++) {
       if (d.minResources[i] > 0) parts.push(ctx.t(keys[i]) + d.minResources[i])
     }

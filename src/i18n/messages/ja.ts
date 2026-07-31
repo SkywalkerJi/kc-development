@@ -59,8 +59,8 @@ export const ja: Record<MsgKey, string> = {
 
   'error.title': 'エラー詳細:',
   'error.unknown': '不明なエラー',
-  'error.poolLoadFailed': '開発プールデータの読み込みエラー',
-  'error.poolLoadException': '開発プールデータの読み込みに失敗しました',
+  'error.poolLoadError': '開発プールデータの読み込みエラー',
+  'error.poolLoadFailed': '開発プールデータの読み込みに失敗しました',
 
   'locale.label': '言語',
   'locale.switchFailed': '言語の切り替えに失敗しました。現在の言語を維持します',

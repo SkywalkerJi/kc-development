@@ -244,7 +244,6 @@ import type { Api_EquipInfo } from '@/types/equipTypes'
 import type { DevelopResult, Resources } from '@/core/types'
 import { poolTypeLabel } from '@/core/types'
 import { t, t as $t, equipName, poolName, shipName, ctypeName, stypeName } from '@/i18n'
-import type { MsgKey } from '@/i18n/types'
 import { formatPoolDescriptor } from '@/core/poolDescriptor'
 import type { DevelopmentPoolClass } from '@/core/developmentPool'
 import { computePoolRates, computeRecipes } from '@/core/orchestration'
@@ -265,13 +264,11 @@ const pools = () => developmentStore.developmentPools
 
 // 名称查询以对象注入 core 的纯函数，core 层因此不依赖 i18n 模块。
 //
-// t 包一层而不是直接引用：DescriptorCtx.t 签名是 (key: string) => string
-// （core 层刻意不知道 MsgKey 这个 UI 层的字面量联合类型），而 i18n 的 t 是
-// (key: MsgKey) => string——参数类型是逆变位置，TS 在严格模式下不允许把
-// 「只认一部分字符串」的函数塞进「认所有字符串」的签名里，直接传 t 编译不过。
-// 这里转手一次不丢失类型安全：formatPoolDescriptor 只会用 core/poolDescriptor.ts
-// 里硬编码的 desc.* 字面量调用 ctx.t，均为合法 MsgKey，as 断言因此成立。
-const descriptorCtx = { t: (key: string) => t(key as MsgKey), shipName, ctypeName, stypeName }
+// t 可以直接传：DescriptorCtx.t 的参数类型 DescMsgKey（core/poolDescriptor.ts）
+// 是 MsgKey 的子集，而 i18n 的 t 签名是 (key: MsgKey) => string——参数类型
+// 是逆变位置，「认所有 MsgKey」的函数天然能当「只认 DescMsgKey 子集」的函数
+// 用，不需要再转手一次包一层断言。
+const descriptorCtx = { t, shipName, ctypeName, stypeName }
 
 /** 下拉框里池名后面括号里的筛选条件描述，见 core/poolDescriptor.ts。 */
 function describePool(pool: DevelopmentPoolClass): string {
