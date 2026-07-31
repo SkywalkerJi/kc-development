@@ -46,10 +46,10 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
    * 丢掉，暴露出来的元素类型结构上不再是 DevelopmentPoolClass。改造前 View
    * 与 store 里一共有三处 `as unknown as DevelopmentPoolClass` 断言应付这个问题
    * ——DevelopmentView.vue 的 pools()、developmentStore.ts 的 setFlagship、
-   * DevelopmentView.vue 的 availablePools（selectablePools 的包装）。改成公开
-   * 字段后，跑 pnpm type-check 逐个验证：前两处确认不再需要，已经删掉；
-   * 第三处本任务范围之外未动（Task 7 改模板时一并处理），仍留着同样的断言
-   * 和注释。
+   * DevelopmentView.vue 的 availablePools（selectablePools 的包装，唯一没有
+   * 配注释解释原因的一处）。改成公开字段后，跑 pnpm type-check 逐个验证：
+   * 前两处（带注释的那两处）确认不再需要，已经删掉，注释一并清理；
+   * 第三处本任务范围之外未动（Task 7 改模板时一并处理），断言原样留着。
    */
   descriptor: PoolDescriptor = { stypes: [], ctypes: [], shipNames: [], excludeShipIds: [], shipIds: [] }
 
@@ -113,11 +113,21 @@ export class DevelopmentPoolClass implements DevelopmentPoolData {
   }
 
   /**
-   * 只返回池名，**不再拼描述**。
+   * 只返回池名，**不再拼描述**，仅用于日志/调试这类不面向用户的场合。
    *
    * 描述的唯一产出点是 core/poolDescriptor.ts 的 formatPoolDescriptor()。
    * 这里若也拼一份，两者会各拼各的、慢慢分叉 —— 正是这次重构要消除的东西。
-   * 模板不再渲染 String(pool)，改为调用那个格式化函数。
+   *
+   * ⚠️ 交接给 Task 7 的未完成状态：DevelopmentView.vue:22 目前仍在模板里
+   * 渲染 `{{ String(pool) }}`，本任务**没有**改它——那是 Task 7 的范围
+   * （改成调用 formatPoolDescriptor），这里改动 toString() 的返回值已经
+   * 是这次重构能动的边界。在 Task 7 接上之前，「秘书舰类型」下拉框里的
+   * 每一行只显示开发池名称，不再显示旧版 `名称(舰种/舰级/舰名/最低资源
+   * 描述)` 里那部分描述——用户没法只看下拉框文字判断某个池具体按什么条件
+   * 筛选。（不是「同名池互相分不清」：developmentStore.ts 的 selectablePools
+   * 本就按名称去重、只保留同名里第一个可选的那个，同名的其余成员从来不会
+   * 同时出现在下拉框里，这点改造前后没有变化；真正的损失是这一行本身少了
+   * 描述文字。）
    */
   toString(): string {
     return this.开发池名称
