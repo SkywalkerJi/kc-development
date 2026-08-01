@@ -600,6 +600,38 @@ describe('DevelopmentView — 「可用公式」的选中语义', () => {
     expect(fuelInput.value).toBe('30')
     expect(rows[0].classList.contains('result-selected')).toBe(true)
   })
+
+  // round5 发现 22：每一行都写死 tabindex="0"，于是整块表有多少行就有多少个
+  // Tab 停靠点（实测真实数据下选一件装备就是 64 个）。参考实现那边整个
+  // listView2 是**一个**控件、只占一个 TabIndex（DevelopmentWindow.cs:1191）。
+  // 正确形态是 roving tabindex：只有"当前那一行"可 Tab 进入，组内移动交给
+  // 已经实现好的方向键。
+  it('结果行用 roving tabindex：整块表只占一个 Tab 停靠点', async () => {
+    const rows = await showTwoResults()
+    const tabbable = [...rows].filter((r) => r.getAttribute('tabindex') === '0')
+    expect(tabbable).toHaveLength(1)
+    // 可 Tab 进入的那一行就是当前选中行
+    expect(tabbable[0].classList.contains('result-selected')).toBe(true)
+    expect(rows[1].getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('方向键移动选中行后，Tab 停靠点跟着移动', async () => {
+    const rows = await showTwoResults()
+    rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    await flush()
+
+    expect(rows[0].getAttribute('tabindex')).toBe('-1')
+    expect(rows[1].getAttribute('tabindex')).toBe('0')
+  })
+
+  // aria-selected 只有在 row 被 grid/treegrid 拥有时才受支持；挂在原生
+  // <table> 的 row 上会被浏览器整个丢弃（实测 CDP 取无障碍树，该行的 AX
+  // 节点只有 focusable=true，没有 selected）。
+  it('结果表声明 role=grid，让行上的 aria-selected 真正生效', async () => {
+    await showTwoResults()
+    const table = container!.querySelector('.development-results table')!
+    expect(table.getAttribute('role')).toBe('grid')
+  })
 })
 
 // Task 7：锁定这次改造最容易漏掉的三处——下拉框的拼句、装备名的翻译（而不是
@@ -771,5 +803,98 @@ describe('DevelopmentView — i18n 接线（Task 7）', () => {
     // 没变。
     const secretaryCellAfter = container!.querySelector('.development-results tbody tr td')!
     expect(secretaryCellAfter.textContent).toBe('炮战系-意')
+  })
+})
+
+/**
+ * 「当前跟踪着哪艘秘书舰」的单一真值源（round5 发现 21）。
+ *
+ * 这三条是**特征测试**（characterization test）：它们钉的是改造前就已经
+ * 正确的那部分外在行为，目的是给随后「把 resolved 从子组件搬到父组件、
+ * 消灭第二个真值源」这次重构当安全网——重构不改行为，所以这三条在重构
+ * 前后都必须是绿的。
+ *
+ * 为什么这条缺陷本身没有一条会红的测试：改造前那份分歧只存在于父组件的
+ * flagshipPoolName 与子组件的 resolved 之间，而 <p> 的显示与否由后者决定、
+ * 相符与否由前者决定 —— resolved 为 null 时 <p> 整个不渲染，分歧无从观察。
+ * 重构之后两者合一，这三条就同时成了它的守卫：父组件漏掉 @clear 会让
+ * 第三条直接变红。
+ */
+describe('DevelopmentView — 秘书舰归属池提示（发现 21）', () => {
+  let pinia: Pinia
+  let app: App | null = null
+  let container: HTMLElement | null = null
+
+  beforeEach(() => {
+    pinia = createPinia()
+    setActivePinia(pinia)
+    __resetI18nForTest()
+
+    const developmentStore = useDevelopmentStore()
+    const start2Store = useStart2Store()
+
+    start2Store.shipList = { 78: { id: 78, name: '金剛', yomi: 'こんごう' } } as never
+    start2Store.equipList = {
+      100: { id: 100, name: '测试装备A', types: [0, 0, 0, 0], broken: [1, 1, 1, 1] },
+    } as never
+
+    // A 池更窄（舰ID 只有 78），setFlagship 取最窄的那个，所以 78 归 A 池。
+    // B 池同样可选，用来制造「所选池 ≠ 秘书舰归属池」。
+    developmentStore.developmentPools = createPools([
+      { 开发池名称: 'A池', 开发池ID: 1, 舰ID: [78], 出货率: { '100': 6 } },
+      { 开发池名称: 'B池', 开发池ID: 1, 舰ID: [78, 79], 出货率: { '100': 6 } },
+    ])
+    developmentStore.existPool = ['A池', 'B池']
+    developmentStore.filterButtonList = {}
+    vi.spyOn(developmentStore, 'initializeData').mockResolvedValue({ success: true, error: null })
+
+    container = document.createElement('div')
+    document.body.appendChild(container)
+  })
+
+  afterEach(() => {
+    app?.unmount(); container?.remove(); app = null; container = null; vi.restoreAllMocks()
+  })
+
+  async function mountAndPick() {
+    app = createApp(DevelopmentView)
+    app.use(pinia)
+    app.mount(container as HTMLElement)
+    await flush()
+
+    const search = container!.querySelector<HTMLInputElement>('#flagship')!
+    fireInput(search, '金剛')
+    await flush()
+    container!.querySelector<HTMLLIElement>('.suggestions li')!.click()
+    await flush()
+    return search
+  }
+
+  it('选中秘书舰后显示归属池，且与所选池相符', async () => {
+    await mountAndPick()
+    const p = container!.querySelector('.flagship-search p')
+    expect(p).not.toBeNull()
+    expect(p!.className).toContain('matched')
+    expect(p!.className).not.toContain('mismatched')
+  })
+
+  it('把所选池改成另一个：同一条提示转为「不符」', async () => {
+    await mountAndPick()
+    const select = container!.querySelector<HTMLSelectElement>('#poolSelect')!
+    select.selectedIndex = 1
+    select.dispatchEvent(new Event('change'))
+    await flush()
+
+    expect(container!.querySelector('.flagship-search p')!.className).toContain('mismatched')
+  })
+
+  it('继续编辑搜索框：不再跟踪任何秘书舰，提示整条消失', async () => {
+    const search = await mountAndPick()
+    // 关键字要仍能命中候选：打成一个搜不到的词会渲染**另一条** <p class="miss">
+    // （未找到该舰），那样测的就成了"换了一条提示"而不是"跟踪提示消失"。
+    fireInput(search, '金')
+    await flush()
+
+    expect(container!.querySelector('.flagship-search p')).toBeNull()
   })
 })

@@ -192,3 +192,254 @@ describe('FlagshipSearch：选中态跟随语言切换（Fix 4）', () => {
     expect(input.value).toBe('長門')
   })
 })
+
+/**
+ * 建议列表的关闭路径（round5 发现 15）。
+ *
+ * 改造前 `open` 只在 choose() 里被置回 false，没有任何其它出口。列表是
+ * `position:absolute; z-index:10; top:100%`、最高 240px 的悬浮层，正好压在
+ * 下方的资源输入框上：真实 Chrome 实测 1400px 下「钢」「铝」两框点不到，
+ * 1024px 下四种语言里四个框**全部**点不到——点下去会被建议项截走，静默
+ * 切换所选池。
+ *
+ * 这里钉的是「列表会不会自己关掉」这个状态迁移，与视口宽度无关（jsdom
+ * 不做布局，也测不了遮挡几何；遮挡那一面由 scripts/verify-render.mjs 的
+ * elementFromPoint 断言兜）。
+ */
+describe('FlagshipSearch：建议列表的关闭路径（发现 15）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    __resetI18nForTest()
+    const s = useStart2Store()
+    // 两条都能被关键字「金」命中，键盘上下移动才有可移动的余地
+    s.shipList = {
+      78: { id: 78, name: '金剛', yomi: 'こんごう' },
+      79: { id: 79, name: '金剛改', yomi: 'こんごうかい' },
+    } as never
+    useDevelopmentStore().developmentPools = createPools([
+      { 开发池名称: '金刚池', 开发池ID: 1, 舰ID: [78, 79], 出货率: {} },
+    ])
+  })
+  afterEach(() => { app?.unmount(); host?.remove(); app = null; host = null; vi.unstubAllGlobals() })
+
+  it('按 Escape 收起建议列表', async () => {
+    const el = mount()
+    expect((await type(el, '金')).length).toBeGreaterThan(0)
+
+    const input = el.querySelector('input') as HTMLInputElement
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(el.querySelectorAll('.suggestions li')).toHaveLength(0)
+  })
+
+  it('输入框失焦后收起建议列表', async () => {
+    const el = mount()
+    expect((await type(el, '金')).length).toBeGreaterThan(0)
+
+    const input = el.querySelector('input') as HTMLInputElement
+    input.dispatchEvent(new FocusEvent('blur'))
+    await nextTick()
+
+    expect(el.querySelectorAll('.suggestions li')).toHaveLength(0)
+  })
+
+  // ⚠️ 上面那条「失焦即关闭」会引入一个 **jsdom 测不出来** 的回归：
+  // 真实浏览器点 <li> 的事件序列是 mousedown → blur → mouseup → click，
+  // 失焦关闭会在 click 落地**之前**把 <li> 从 DOM 上摘掉，点击于是永远
+  // 送不到 choose()。而 jsdom 的 li.click() 只派发 click、不派发
+  // mousedown/blur，所以既有那条「点建议项能选中」的用例照样全绿。
+  //
+  // 这里手工复刻真实序列（mousedown 可取消 → 未被 preventDefault 才 blur），
+  // 断言的是「click 还有机会落地」这个前置条件，而不是 click 本身——
+  // 因为在 jsdom 里对一个已被摘除的节点调 click() 依然会命中 Vue 挂在它
+  // 上面的监听器，断言 click 的结果反而测不出这个回归。
+  it('点建议项：mousedown 不得让建议项在 click 落地前消失', async () => {
+    const el = mount()
+    expect((await type(el, '金')).length).toBeGreaterThan(0)
+
+    const input = el.querySelector('input') as HTMLInputElement
+    const li = el.querySelector('.suggestions li') as HTMLLIElement
+
+    const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    li.dispatchEvent(mousedown)
+    // 浏览器只在 mousedown 未被 preventDefault 时才移动焦点
+    if (!mousedown.defaultPrevented) input.dispatchEvent(new FocusEvent('blur'))
+    await nextTick()
+
+    expect(el.contains(li)).toBe(true)
+  })
+})
+
+/**
+ * 键盘可达性（round5 发现 23）。
+ *
+ * 改造前建议列表对纯键盘用户完全不可用：<li> 既不是原生可聚焦元素、也没有
+ * tabindex，组件里更没有任何 keydown 处理——真实 Chrome 实测按 Tab 焦点
+ * 直接从 #flagship 跳到 #fuel，把整个列表跳过去，「按舰名反查归属开发池」
+ * 这条本页唯一入口纯键盘够不着。
+ */
+describe('FlagshipSearch：键盘导航（发现 23）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    __resetI18nForTest()
+    const s = useStart2Store()
+    s.shipList = {
+      78: { id: 78, name: '金剛', yomi: 'こんごう' },
+      79: { id: 79, name: '金剛改', yomi: 'こんごうかい' },
+    } as never
+    useDevelopmentStore().developmentPools = createPools([
+      { 开发池名称: '金刚池', 开发池ID: 1, 舰ID: [78, 79], 出货率: {} },
+    ])
+  })
+  afterEach(() => { app?.unmount(); host?.remove(); app = null; host = null; vi.unstubAllGlobals() })
+
+  const press = (el: HTMLElement, key: string) => {
+    ;(el.querySelector('input') as HTMLInputElement)
+      .dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    return nextTick()
+  }
+
+  it('ArrowDown 高亮第一项，Enter 选中它', async () => {
+    const el = mount()
+    expect(await type(el, '金')).toHaveLength(2)
+
+    await press(el, 'ArrowDown')
+    await press(el, 'Enter')
+
+    const input = el.querySelector('input') as HTMLInputElement
+    expect(input.value).toBe('金剛')
+    expect(el.querySelectorAll('.suggestions li')).toHaveLength(0)
+  })
+
+  // ARIA 1.2 的 combobox + listbox 契约。焦点留在 input 上，"当前是哪一项"
+  // 由 aria-activedescendant 指过去——所以 <li> 不需要 tabindex。
+  it('展开时暴露 combobox / listbox / option 语义，activedescendant 指向高亮项', async () => {
+    const el = mount()
+    await type(el, '金')
+    await press(el, 'ArrowDown')
+
+    const input = el.querySelector('input') as HTMLInputElement
+    const list = el.querySelector('.suggestions') as HTMLUListElement
+    const options = [...el.querySelectorAll('.suggestions li')] as HTMLLIElement[]
+
+    expect(input.getAttribute('role')).toBe('combobox')
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    expect(input.getAttribute('aria-autocomplete')).toBe('list')
+    expect(input.getAttribute('aria-controls')).toBe(list.id)
+    expect(list.id).not.toBe('')
+    expect(list.getAttribute('role')).toBe('listbox')
+    expect(options.map((o) => o.getAttribute('role'))).toEqual(['option', 'option'])
+
+    // 高亮在第一项：activedescendant 必须指向它、且只有它 aria-selected
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id)
+    expect(options.map((o) => o.getAttribute('aria-selected'))).toEqual(['true', 'false'])
+  })
+
+  it('收起时 aria-expanded 为 false，且不再残留 activedescendant', async () => {
+    const el = mount()
+    await type(el, '金')
+    await press(el, 'ArrowDown')
+    await press(el, 'Escape')
+
+    const input = el.querySelector('input') as HTMLInputElement
+    expect(input.getAttribute('aria-expanded')).toBe('false')
+    expect(input.getAttribute('aria-activedescendant')).toBeNull()
+  })
+
+  // 高亮下标是相对**当前**建议列表的。继续打字会换掉整个列表，旧下标要么
+  // 指向另一艘舰（Enter 选错船），要么直接越界（activeOptionId 取到
+  // undefined.id 而抛错）。两种都必须由「一改输入就重置」堵掉。
+  it('继续输入缩小结果后不残留越界高亮', async () => {
+    const el = mount()
+    expect(await type(el, '金')).toHaveLength(2)
+    await press(el, 'ArrowDown')
+    await press(el, 'ArrowDown') // 高亮落在第 2 项
+
+    expect(await type(el, '金剛改')).toHaveLength(1) // 列表缩到 1 项，旧下标越界
+
+    const input = el.querySelector('input') as HTMLInputElement
+    expect(input.getAttribute('aria-activedescendant')).toBeNull()
+
+    // 此时按 Enter 不该选中任何东西——没有高亮项
+    await press(el, 'Enter')
+    expect(input.value).toBe('金剛改')
+  })
+
+  // 「一改输入就重置」堵不住这条：译名维度让 suggestions 也随**语言**变化，
+  // 而语言切换不经过 onInput。列表在用户没碰键盘的情况下自己缩短，旧下标
+  // 同样会越界。
+  it('语言切换让建议列表缩短时，高亮不越界', async () => {
+    const table = { en: { 78: 'X-one', 79: 'X-two' }, 'zh-Hans': { 78: 'X-one', 79: '别的' } }
+    const stub = (locale: 'en' | 'zh-Hans') =>
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+        ok: true, status: 200,
+        json: async () => (String(url).includes('ships.json') ? table[locale] : { 1: 'x' }),
+      } as unknown as Response)))
+
+    stub('en')
+    await setLocale('en')
+
+    const el = mount()
+    expect(await type(el, 'X')).toHaveLength(2)
+    await press(el, 'ArrowDown')
+    await press(el, 'ArrowDown') // 高亮落在第 2 项
+
+    stub('zh-Hans')
+    await setLocale('zh-Hans')
+    await nextTick()
+
+    // 79 的译名不再含 X，列表缩到 1 项；旧下标 1 已越界
+    expect(el.querySelectorAll('.suggestions li')).toHaveLength(1)
+    const input = el.querySelector('input') as HTMLInputElement
+    expect(input.getAttribute('aria-activedescendant')).toBeNull()
+  })
+})
+
+/**
+ * 「当前跟踪着哪艘秘书舰」的单一真值源（round5 发现 21）。
+ *
+ * 改造前这件事有两个真值源：子组件本地的 resolved（一改输入就清空）决定
+ * 那条归属池提示显不显示，父组件的 flagshipPoolName（只写不清）决定它显示
+ * 「相符」还是「不符」。后者**没有任何清空点**，于是用户编辑搜索框之后，
+ * 父组件仍然记着一艘早已不在跟踪的舰的归属池。
+ *
+ * 这份分歧当前不可见（resolved 为 null 时那条 <p> 整个不渲染），所以这里
+ * 钉的是组件间的契约本身——子组件停止跟踪时必须通知父组件——而不是某个
+ * 当下能看到的错误呈现。
+ */
+describe('FlagshipSearch：停止跟踪秘书舰时通知父组件（发现 21）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    __resetI18nForTest()
+    const s = useStart2Store()
+    s.shipList = { 78: { id: 78, name: '金剛', yomi: 'こんごう' } } as never
+    useDevelopmentStore().developmentPools = createPools([
+      { 开发池名称: '金刚池', 开发池ID: 1, 舰ID: [78], 出货率: {} },
+    ])
+  })
+  afterEach(() => { app?.unmount(); host?.remove(); app = null; host = null; vi.unstubAllGlobals() })
+
+  // trackedPool 由父组件持有，所以这里显式传它进来扮演父组件的角色——
+  // 单独挂子组件而不传，测的就不是这个契约了。
+  function mountTracking(trackedPool: string | null) {
+    const onClear = vi.fn()
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    app = createApp(FlagshipSearch, { matched: true, trackedPool, onClear })
+    app.mount(host)
+    return onClear
+  }
+
+  it('正在跟踪某舰时编辑输入框：emit clear，让父组件放下那份归属池', async () => {
+    const onClear = mountTracking('金刚池')
+    await type(host as HTMLElement, '金')
+    expect(onClear).toHaveBeenCalledTimes(1)
+  })
+
+  it('没在跟踪任何舰时敲字：不 emit clear（否则每个按键都抛一次空通知）', async () => {
+    const onClear = mountTracking(null)
+    await type(host as HTMLElement, '金')
+    expect(onClear).not.toHaveBeenCalled()
+  })
+})

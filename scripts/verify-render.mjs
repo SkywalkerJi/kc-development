@@ -488,6 +488,125 @@ async function triggerFlagshipSearch(cdp) {
   return true
 }
 
+/**
+ * round5 发现 15 的守卫：建议列表**能被收起**，收起之后四个资源输入框
+ * 各自的中心点必须命中它们自己。
+ *
+ * 断言的口径必须是「Escape 之后」，不能是「列表展开时」——展开的下拉列表
+ * 盖住下方内容是自动补全的正常形态，不是缺陷；缺陷是它**没有任何关闭
+ * 路径**，于是永远盖着。改造前 .suggestions 是 position:absolute、
+ * z-index:10、最高 240px、紧贴 #flagship 下方的悬浮层，而 open 只在
+ * choose() 里被置回 false：真实 Chrome 实测 1400px 下「钢」「铝」两框的
+ * 中心点、1024px 下四种语言里四个框**全部**的中心点，
+ * document.elementFromPoint 返回的都是 .suggestions li——用户想去改资源，
+ * 点下去却被建议项截走、静默换掉所选池。
+ *
+ * 用 elementFromPoint 而不是比较矩形：命中测试是「这个点上用户点到谁」的
+ * 直接答案，不需要自己复刻层叠上下文与 z-index 的规则去推。
+ */
+const RESOURCE_INPUT_IDS = ['fuel', 'ammo', 'steel', 'bauxite']
+
+async function probeResourceInputsAfterDismiss(cdp) {
+  await evaluate(cdp, `(() => {
+    const el = document.querySelector('#flagship');
+    if (el) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return true;
+  })()`)
+  // Vue 的 DOM 更新在微任务里，等列表真的从 DOM 上消失再做命中测试；
+  // 超时不在这里抛断，让下面的命中测试如实拍下"没关掉"这个状态。
+  try {
+    await waitFor('建议列表在 Escape 后收起', () => evaluate(cdp, `document.querySelectorAll('.suggestions li').length === 0`), 2000)
+  } catch { /* 交给断言去判 */ }
+
+  return evaluate(cdp, `(() => {
+    const out = {};
+    for (const id of ${JSON.stringify(RESOURCE_INPUT_IDS)}) {
+      const el = document.getElementById(id);
+      if (!el) { out[id] = null; continue; }
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      out[id] = {
+        self: hit === el,
+        // 命中别的东西时把它记下来，报错信息里能直接看出是被谁盖住的
+        hitTag: hit ? hit.tagName.toLowerCase() : null,
+        hitClass: hit ? String(hit.className || '') : null,
+      };
+    }
+    return out;
+  })()`)
+}
+
+/**
+ * 用**真实鼠标事件**点第一条建议，核验它仍然能选中（发现 15 的配套守卫）。
+ *
+ * 为什么非要真实鼠标：@blur="close" 是这次改动里最危险的一处——真实浏览器点
+ * <li> 的序列是 mousedown → blur → mouseup → click，失焦关闭会在 click 落地
+ * 之前把 <li> 摘掉，点击永远送不到 choose()。挡住它的是 <ul> 上的
+ * @mousedown.prevent。而 jsdom 的 li.click() 只派发 click、不派发
+ * mousedown/blur，单测里那条守卫是**手工复刻**的事件序列，是模型不是浏览器。
+ * 这里用 Input.dispatchMouseEvent 走真实链路，验证模型没说谎。
+ *
+ * 断言两个副作用（与审计阶段实测的口径一致）：输入框的值变成该舰译名、
+ * 且所选池跟着换过去。
+ */
+async function verifySuggestionClick(cdp) {
+  const before = await evaluate(cdp, `(() => {
+    const li = document.querySelector('.suggestions li');
+    if (!li) return null;
+    const r = li.getBoundingClientRect();
+    const sel = document.querySelector('#poolSelect');
+    return {
+      x: r.x + r.width / 2, y: r.y + r.height / 2,
+      // li 的文本形如「金剛（こんごう）」，取括号前那段与输入框比对
+      label: li.textContent.trim().split('（')[0],
+      pool: sel ? sel.options[sel.selectedIndex].text : null,
+    };
+  })()`)
+  if (!before) return { ok: false, reason: '建议列表里没有可点的项' }
+
+  for (const type of ['mousePressed', 'mouseReleased']) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type, x: before.x, y: before.y, button: 'left', clickCount: 1,
+    })
+  }
+  try {
+    await waitFor('点击建议后输入框变成该舰名', () => evaluate(cdp,
+      `document.querySelector('#flagship').value === ${JSON.stringify(before.label)}`), 2000)
+  } catch { /* 交给下面的返回值去判 */ }
+
+  const after = await evaluate(cdp, `(() => {
+    const sel = document.querySelector('#poolSelect');
+    return {
+      value: document.querySelector('#flagship').value,
+      pool: sel ? sel.options[sel.selectedIndex].text : null,
+      stillOpen: document.querySelectorAll('.suggestions li').length > 0,
+    };
+  })()`)
+  return { ok: after.value === before.label, before, after }
+}
+
+/**
+ * 核验 role="grid" 之后，选中行的 aria-selected 真的进了无障碍树（发现 22）。
+ *
+ * 这一条只能问浏览器：ARIA 规定 aria-selected 仅在 row 被 grid/treegrid 拥有
+ * 时受支持，挂在原生 <table> 的 row 上会被整个丢弃——审计阶段正是用
+ * Accessibility.getPartialAXTree 读出「该行 AX 节点只有 focusable=true、没有
+ * selected」才立的案。断言属性字符串在不在 DOM 上证明不了这件事。
+ */
+async function verifySelectedRowAx(cdp) {
+  await cdp.send('DOM.enable')
+  await cdp.send('Accessibility.enable')
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1 })
+  const { nodeId } = await cdp.send('DOM.querySelector', {
+    nodeId: root.nodeId, selector: '.development-results tbody tr.result-selected',
+  })
+  if (!nodeId) return { ok: false, reason: '找不到选中的结果行' }
+  const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false })
+  const row = nodes.find((n) => n.role?.value === 'row')
+  const props = (row?.properties ?? []).map((p) => `${p.name}=${JSON.stringify(p.value?.value)}`)
+  return { ok: props.some((p) => p.startsWith('selected=true')), role: row?.role?.value ?? null, props }
+}
+
 /** 点第一个可用的装备按钮，让「可用公式」表真的有内容可看——它的 <table> 整体
  *  由 v-if="hasSelectedEquipments" 控制，不选中任何装备时连表头都不会渲染。
  *  副作用（有意接受，不是本工具要规避的东西）：DevelopmentView.toggleEquipment
@@ -890,6 +1009,22 @@ function assertSnapshot(locale, width, snapshot) {
     fail(`建议列表与输入框未左对齐：suggestionsList.x=${suggestionsList.x} ≠ flagshipInput.x=${flagshipInput.x}`)
   }
 
+  // 发现 15 的守卫：收起建议列表之后，四个资源输入框的中心点必须命中它们
+  // 自己（详见 probeResourceInputsAfterDismiss 的注释——断言口径是「Escape
+  // 之后」而不是「展开时」，展开的下拉列表盖住下方内容是正常形态）。
+  const dismissed = snapshot.resourceInputsAfterDismiss
+  if (!dismissed) {
+    fail('缺少 resourceInputsAfterDismiss 探针结果')
+  } else {
+    for (const id of RESOURCE_INPUT_IDS) {
+      const probe = dismissed[id]
+      if (!probe) { fail(`资源输入框 #${id} 不存在`); continue }
+      if (!probe.self) {
+        fail(`收起建议列表后 #${id} 仍被遮挡：其中心点命中的是 <${probe.hitTag} class="${probe.hitClass}">`)
+      }
+    }
+  }
+
   return failures
 }
 
@@ -975,9 +1110,29 @@ async function main() {
 
         for (const width of VIEWPORTS) {
           await setViewport(cdp, width)
+          // 顺序有讲究：captureSnapshot 要的是**建议列表展开**的状态
+          // （suggestionsCount / suggestionsSample / boxes.suggestionsList
+          // 都指望它在场），dismiss 探针要的是收起之后的状态，只能排在它
+          // 后面；探完再把列表重新打开，供下一档视口用。
           const snapshot = await captureSnapshot(cdp)
+          snapshot.resourceInputsAfterDismiss = await probeResourceInputsAfterDismiss(cdp)
+          await triggerFlagshipSearch(cdp)
           localeResult.viewports[width] = snapshot
           hardFailures.push(...assertSnapshot(locale, width, snapshot))
+        }
+
+        // ⚠️ 这两步必须排在视口循环**之后**：点建议会改掉 #poolSelect，
+        // 而循环里的 secretaryOptions 等断言要读它，放进循环会互相污染。
+        const axProbe = await verifySelectedRowAx(cdp)
+        localeResult.selectedRowAx = axProbe
+        if (!axProbe.ok) {
+          hardFailures.push(`[${locale}] 选中的结果行没有把 aria-selected 暴露进无障碍树（role=${axProbe.role}，properties=${JSON.stringify(axProbe.props ?? axProbe.reason)}）——role="grid" 没起作用`)
+        }
+
+        const clickProbe = await verifySuggestionClick(cdp)
+        localeResult.suggestionClick = clickProbe
+        if (!clickProbe.ok) {
+          hardFailures.push(`[${locale}] 真实鼠标点建议项没有选中该舰：${JSON.stringify(clickProbe.reason ?? clickProbe.after)}（期望输入框变成 ${JSON.stringify(clickProbe.before?.label)}）`)
         }
       } catch (e) {
         const msg = `${locale} 核验失败：${e.message ?? e}`

@@ -36,7 +36,16 @@
           </select>
         </div>
 
-        <FlagshipSearch :matched="flagshipMatched" @select="onFlagshipSelect" />
+        <!-- flagshipPoolName 是「当前跟踪着哪艘秘书舰」的**唯一**真值源：
+             子组件只读它渲染提示、并在用户继续编辑时 emit clear 让它放下
+             （发现 21——改造前子组件另存了一份 resolved，两份状态只有
+             choose() 一个共同写入点，父组件这份没有任何清空点）。 -->
+        <FlagshipSearch
+          :matched="flagshipMatched"
+          :tracked-pool="flagshipPoolName"
+          @select="onFlagshipSelect"
+          @clear="flagshipPoolName = null"
+        />
 
         <!-- 资源输入区域 -->
         <!--
@@ -227,7 +236,11 @@
             `.development-results thead th` / `tbody tr` 这类后代选择器，中间
             多一层不影响它们。 -->
           <div v-if="hasSelectedEquipments" class="table-scroll">
-          <table>
+          <!-- role="grid"：行上的 aria-selected 只有在 row 被 grid/treegrid
+               拥有时才受 ARIA 支持，挂在原生 <table> 的 row 上会被浏览器
+               整个丢弃（发现 22）。这张表本来就是个可选、可键盘导航的
+               网格控件，不是纯排版表格。 -->
+          <table role="grid">
             <thead>
               <tr>
                 <th
@@ -251,7 +264,7 @@
               <tr
                 v-for="(result, index) in sortedResults"
                 :key="index"
-                tabindex="0"
+                :tabindex="rowTabIndex(result, index)"
                 role="row"
                 :aria-selected="result === selectedResult"
                 :class="{ 'result-selected': result === selectedResult }"
@@ -781,6 +794,30 @@ function selectResultAt(index: number) {
   if (selectedResult.value === result) return
   selectedResult.value = result
   selectResult(result)
+}
+
+/**
+ * roving tabindex（发现 22）：整块表只占**一个** Tab 停靠点，组内移动交给
+ * 下面 onResultKeydown 里已经实现好的方向键。
+ *
+ * 改造前每一行都写死 tabindex="0"，有多少行就有多少个停靠点——真实数据下
+ * 选一件装备就是 64 个，键盘用户要按 64 次 Tab 才能穿过这块区域。参考实现
+ * 那边整个 listView2 是一个控件、只占一个 TabIndex（DevelopmentWindow.cs:1191）。
+ *
+ * 没有选中行时退回第一行：否则一行都不可聚焦，整张表键盘进不去——
+ * 这是 roving tabindex 最常见的一个坑。
+ *
+ * 「已选中、但那个对象不在当前 sortedResults 里」会踩进同一个坑（每行都拿到
+ * -1），这里没有为它加分支，因为它结构上不可达：selectedResult 只有两个写点
+ * ——selectResultAt 写进去的必定是 sortedResults 的成员（:794），
+ * refreshResults 则在替换 developmentResults 的**同一个同步块**里把它置回
+ * null（:542）。sortedResults 是 developmentResults 的 computed，排序只换位置
+ * 不换对象。要是将来有人在别处替换结果列表，必须同时清 selectedResult，
+ * 否则这条不变式就断了。
+ */
+function rowTabIndex(result: DevelopResult, index: number): number {
+  if (selectedResult.value) return result === selectedResult.value ? 0 : -1
+  return index === 0 ? 0 : -1
 }
 
 /** 方向键 / Home / End 在结果行之间移动选中项，与点击走同一条应用路径。 */
