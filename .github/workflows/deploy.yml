@@ -1,25 +1,45 @@
-name: 部署到GitHub Pages
+name: CI 与部署到GitHub Pages
 
+# pull_request 触发是这个文件存在两个 job 的理由（round5 发现 12）：
+# 改造前只有 `push: main`，类型检查与测试**只在合并之后**才第一次运行。
+# 后果不需要实验就成立——PR 页面上不会出现任何 check，也就无法在分支保护里
+# 设为必需检查：一个带类型错误或对拍失败的 PR 可以直接 merge，merge 之后
+# deploy 才第一次跑并失败，本次不部署（线上还是旧版本），但 main 已经是坏的，
+# 下一个人拉下来就是坏的基线。
+#
+# ⚠️ 不能按「拆成独立的 ci.yml，再让 deploy `needs:` 它」那样做：
+# `needs:` 只在**同一个 workflow 文件内**的 job 之间成立，跨文件依赖要走
+# `workflow_run`，那条路在 PR 场景下拿不到正确的 head ref，比收益复杂得多。
+# 所以两个 job 留在同一个文件里。
 on:
   push:
     branches: ['main']
+  pull_request:
   workflow_dispatch:
 
+# 权限按 job 收紧，不在顶层一次性给全：ci 会在 PR 上运行（含来自 fork 的
+# PR），它只需要读代码。pages/id-token 只给真正要部署的那个 job。
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-concurrency:
-  group: 'pages'
-  cancel-in-progress: true
-
+# ⚠️ concurrency 必须放在 **job 级**，不能像改造前那样放在 workflow 顶层。
+# 顶层那份原本只作用于「main 的部署」，因为当时这个 workflow 只有 push 触发；
+# 加上 pull_request 之后，同一个 `pages` 组会把 PR 的 CI 也圈进来，于是
+# 任意两个 PR 互相取消对方的检查、PR 还会取消正在进行的 main 部署。
+# 两个 job 要的是**相反**的语义，分开声明：
+#   ci     —— 按 ref 分组，同一分支的新 push 取消上一次跑（想要的行为）
+#   deploy —— 全局串行且 **不** 取消：Pages 部署被中途取消可能留下半完成状态
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # 合并前的门禁。push 与 pull_request 都会跑，所以它可以被设成分支保护的
+  # 必需检查。
+  ci:
+    name: 类型检查 · 测试 · 构建
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -51,17 +71,50 @@ jobs:
       - name: 测试
         run: pnpm test
 
+      # 构建同样是门禁的一部分，不只是部署的准备步骤：构建失败（比如 vite
+      # 解析不了某个新写法）在 PR 上就该拦下来。
       - name: 构建
         run: pnpm build-only
 
-      - name: 设置Pages
-        uses: actions/configure-pages@v4
-
+      # 产物只在真要部署时才上传（PR 不部署，也就不需要 Pages 构件）。
+      # 上传放在 ci 里而不是 deploy 里，是为了不重复跑一遍安装与构建 ——
+      # deploy-pages 本来就是从**同一次运行的上游 job**取名为 github-pages 的
+      # 构件，不需要 deploy 那边再 checkout 或构建一次。
+      #
+      # 改造时顺手去掉了原有的 `actions/configure-pages` 一步：它的输出
+      # （base_path / origin）全项目无人消费——本仓库的 base 是在
+      # vite.config.ts 里按 NODE_ENV 写死的，而且原 workflow 里它连 `id:`
+      # 都没有，输出根本无法被引用。留着它只会逼这个 job 多要一份
+      # pages 权限（而这个 job 现在会在 PR 上运行），删掉更干净。
+      # 它的另一个用途是 `enablement: true` 时自动开启 Pages，本仓库没用这个
+      # 输入，Pages 也早已开启。
       - name: 上传构件
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
+  deploy:
+    name: 部署到GitHub Pages
+    # 门禁不过就不部署。这是拆成两个 job 之后 deploy 与检查之间唯一的连接，
+    # 不能去掉。
+    needs: ci
+    # PR 不部署：它只是提议中的改动，线上应当只跟随 main。
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # 全局串行、且**不**取消进行中的部署：Pages 一次只能部署一份，而中途
+    # 取消可能留下半完成状态。与 ci 那份按 ref 分组、可取消的语义相反。
+    concurrency:
+      group: 'pages'
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: 部署到GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

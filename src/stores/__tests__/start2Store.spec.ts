@@ -578,3 +578,108 @@ describe('start2Store：api_aftershipid 的字符串形态', () => {
     expect(store.getIDs(['二号'], false)).toEqual([2])
   })
 })
+
+/**
+ * round5 发现 9：`loadEquipStatus()` 在一次初始化里被调了两次
+ * （readAbyssalStats 成功路径末尾一次、_initializeData 末尾一次）。
+ *
+ * 删掉前一次是**行为不变**的改动，成立依赖两件事：loadEquipStatus 幂等，
+ * 且 _initializeData 末尾那次调用无条件执行。下面这条用例同时钉住两者：
+ *
+ *  - 幂等被打破（去掉每艘舰开头那段重置、或加一个不重置就累加的字段）
+ *    → 第二次调用会改变快照 → 红。
+ *  - 末尾那次被误删 → 初始化过程中 loadEquipStatus 根本没跑过，手动补跑一次
+ *    才第一次算出结果 → 快照同样对不上 → 红。
+ *
+ * 三条都已用突变实测过：删 `_initializeData` 末尾那次调用 → 红；
+ * 删 `ship.制空 = 0` 一行 → 红；删掉整段重置（352-371 行）→ 红。
+ *
+ * ⚠️ 两个改夹具时必踩的坑：
+ * 1. **`ship.装备` 必须非空**，否则 loadEquipStatus 的整个装备循环体不执行，
+ *    重置之后的累加全是死代码 —— 这条用例第一版就栽在这里：夹具没有
+ *    `kc3_slots`，删掉**整段**重置它照样绿，全量 1405 条测试无一变红。
+ *    判别力来自「装备循环真的跑过」，不是来自快照比较本身。
+ *    上面那三条 `expect(ship.制空).toBeGreaterThan(0)` 之类的前置断言就是
+ *    守着这个前提的，别删。
+ * 2. 别改成断言 `ship.制空 === 0` 那类"字段有值"的写法：
+ *    src/types/shipTypes.ts:89-90 给这些字段写了类初始化值 `= 0`，无论
+ *    loadEquipStatus 跑没跑它们都是 0，那样的断言恒真。
+ */
+describe('发现 9：loadEquipStatus 的两条不变式', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  // ⚠️ 夹具**必须**让 loadEquipStatus 的装备循环真的执行到，否则这条用例
+  // 是空的：`ship.装备` 只由深海数据的 kc3_slots 写入（start2Store.ts:287-292），
+  // 缺这个键就走 else 分支置成 []，于是
+  // `for (let i = 0; i < ship.装备.length; i++)` 零次迭代，开头那段重置之后
+  // 的全部累加都是死代码 —— 把整段重置删掉这条用例照样绿。
+  //
+  // 两道门槛：
+  //  1. `ship.装备 = slots.map(s => s < 1500 ? s + 1000 : s)`，所以
+  //     kc3_slots: [1, 2] 落到装备 id 1001 / 1002；
+  //  2. 循环体开头 `if (!equipList.value[equipId]) continue`，这两个 id
+  //     必须真的在 start2 的装备表里，且属性非零、api_type[2] 能落进
+  //     制空飞机(6/7/8/11/…) 或主炮之类的分类，否则累加出来仍然全是 0。
+  const abyssalPayload = () => ({
+    1: {
+      api_id: 1, api_taik: 30, api_souk: 20, api_houg: 10,
+      api_maxeq: [3, 4],
+      kc3_slots: [1, 2],
+    },
+  })
+
+  // goodStart2Payload 里那件 VALID_EQUIP 属性全 0、分类也匹配不上，
+  // 单靠它累加不出任何东西，所以另外追加两件。
+  const payloadWithEquips = () => {
+    const base = goodStart2Payload()
+    base.api_mst_slotitem = [
+      ...base.api_mst_slotitem,
+      {
+        api_id: 1001, api_name: '舰战',
+        api_houg: 1, api_souk: 1, api_raig: 2, api_baku: 3, api_tyku: 7, api_tais: 1,
+        api_houm: 4, api_houk: 4, api_saku: 2, api_leng: 3, api_rare: 1, api_luck: 0,
+        api_type: [0, 0, 6, 0, 0], api_broken: [1, 1, 1, 1],
+      },
+      {
+        api_id: 1002, api_name: '小口径主炮',
+        api_houg: 5, api_souk: 0, api_raig: 0, api_baku: 0, api_tyku: 0, api_tais: 0,
+        api_houm: 2, api_houk: 0, api_saku: 0, api_leng: 1, api_rare: 0, api_luck: 0,
+        api_type: [0, 0, 1, 0, 0], api_broken: [1, 1, 1, 1],
+      },
+    ] as never
+    return base
+  }
+
+  function stubAll() {
+    stubFetch(async (url: string) => {
+      if (url.includes('start2.json')) return { json: async () => payloadWithEquips(), text: async () => '[]' }
+      if (url.includes('abyssal_stats.json'))
+        return { json: async () => abyssalPayload(), text: async () => JSON.stringify(abyssalPayload()) }
+      return { json: async () => ({}), text: async () => '[]' }
+    })
+  }
+
+  it('幂等：初始化完成后再手动跑一次 loadEquipStatus，舰船状态逐字节不变', async () => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    stubAll()
+
+    const store = useStart2Store()
+    await store.initializeData()
+
+    // 前置条件：装备循环真的跑过。没有这一条，下面的快照比较是在比较两份
+    // 都没被算过的空值，"跑一次和跑两次一样"恒真、测不出任何东西。
+    const ship = store.shipList[1] as unknown as Record<string, unknown>
+    expect(ship.装备).toEqual([1001, 1002])
+    expect(ship.制空).toBeGreaterThan(0)
+    expect(ship.火力plus).toBeGreaterThan(0)
+    expect(ship.装备个数).toMatchObject({ 主炮: 1 })
+
+    const snapshot = JSON.stringify(store.shipList)
+    store.loadEquipStatus()
+    expect(JSON.stringify(store.shipList)).toBe(snapshot)
+    store.loadEquipStatus()
+    expect(JSON.stringify(store.shipList)).toBe(snapshot)
+  })
+})

@@ -111,7 +111,24 @@ pnpm verify-render   # 内部先 pnpm build，再驱动真实 headless Chrome
 
 ## 部署
 
-push 到 `main` 触发 `.github/workflows/deploy.yml`：类型检查 → 测试 → 构建 → GitHub Pages。
+`.github/workflows/deploy.yml` 里有两个 job：
+
+| job | 触发 | 内容 |
+| --- | --- | --- |
+| `ci` | `push: main` **与 `pull_request`** | 类型检查 → 测试 → 构建（PR 上到此为止） |
+| `deploy` | 仅非 PR，且 `needs: ci` | 部署到 GitHub Pages |
+
+也就是说 PR 上会跑完整门禁但不部署，`main` 上门禁通过后才部署。
+
+⚠️ 两个 job 必须留在**同一个文件**里：`needs:` 只在同一 workflow 内的 job 之间成立，
+跨文件依赖要走 `workflow_run`，那条路在 PR 场景下拿不到正确的 head ref。
+
+⚠️ **这道门禁需要在 GitHub 的分支保护里手动设为必需**（仓库设置，不在代码里）。
+没设的话它仍然只是「PR 页面上有个红叉」，拦不住 merge。
+
+在 Settings → Branches → Require status checks 的搜索框里要找的名字是
+**`类型检查 · 测试 · 构建`**，不是 `ci` —— GitHub 上报的 status check context 取的是
+job 的 `name:`，不是 job id。按 `ci` 去搜什么都搜不到，很容易误判成「门禁还没配起来」。
 
 ⚠️ **仓库改名时，以下三处路径必须一起改**（不一致会让线上页面纯白且无任何可见报错）：
 

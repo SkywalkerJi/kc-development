@@ -332,9 +332,16 @@ export const useStart2Store = defineStore('start2', () => {
       }
       
       console.log(`成功处理了 ${processedCount} 条深海舰船数据`)
-      
-      // 加载装备状态
-      loadEquipStatus()
+      // 这里**不要**再调 loadEquipStatus()：_initializeData 末尾已经无条件调过
+      // 一次（"无论深海舰船数据是否加载成功都需要执行"），而本函数的 catch
+      // 只打日志不重抛，所以那一次在成功与失败两条路径上都会执行。曾经在这里
+      // 多调的一次是纯重复计算，实测白花约 43 ms 在首屏关键路径上（round5 发现 9）。
+      //
+      // 这个删除依赖两条不变式：loadEquipStatus 幂等（每艘舰开头把累加字段
+      // 重置为 0 再 `+=`），且 _initializeData 末尾那次无条件执行。两条都由
+      // start2Store.spec.ts 的「发现 9」用例钉住 —— ⚠️ 那条用例的判别力**取决于
+      // 夹具里 ship.装备 非空**（装备循环体不跑的话，删掉整段重置它也照样绿，
+      // 这是它第一版的真实缺陷）。改那份夹具前先读它自己的注释。
     } catch (error) {
       console.error('读取深海舰船数据失败:', error)
       if (error instanceof Error) {
